@@ -1,13 +1,13 @@
 name: Build CLI package
 
-# Manual only, no inputs: press Run and it builds the CLI tarball and
-# overwrites the asset on the `cli-latest` release.
+# Manual only, no inputs: press Run and it builds the CLI tarball, publishes it
+# to GitHub Packages (npm) and overwrites the asset on the `cli-latest` release.
 #
-# Release asset instead of GitHub Packages on purpose: the npm registry on
-# GitHub refuses to republish an existing version (E409) and demands a token
-# even for public packages, so neither "always overwrite latest" nor "install
-# without a token" is possible there. A release asset on a public repo is
-# downloadable anonymously from a URL that never changes:
+# Why both: the npm registry on GitHub refuses to republish an existing version
+# (E409) and demands a token even for public packages. So the published version
+# is suffixed with the run number and tagged `latest` — the package page always
+# shows the newest build — while the release asset stays the token-free install
+# path for the containers already using it:
 #
 #   npm install -g https://github.com/<owner>/<repo>/releases/download/cli-latest/9router-latest.tgz
 on:
@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +63,39 @@ jobs:
           path: 9router-latest.tgz
           if-no-files-found: error
 
+      # Scoped copy: GitHub Packages only accepts @<owner>/* names, and the
+      # version gets a per-run suffix because the registry cannot overwrite an
+      # existing version. prepublishOnly would re-run the whole build.
+      - name: Stage scoped copy
+        id: stage
+        run: |
+          mkdir -p staging
+          tar -xzf 9router-latest.tgz -C staging
+          published=$(node -e '
+            const fs = require("fs");
+            const f = "staging/package/package.json";
+            const p = JSON.parse(fs.readFileSync(f, "utf8"));
+            p.name = "@${{ github.repository_owner }}/9router".toLowerCase();
+            p.version = `${p.version}-build.${{ github.run_number }}`;
+            p.publishConfig = { registry: "https://npm.pkg.github.com" };
+            p.repository = { type: "git", url: "git+${{ github.server_url }}/${{ github.repository }}.git" };
+            delete p.scripts.prepublishOnly;
+            fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
+            process.stdout.write(p.name + "@" + p.version);
+          ')
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+          echo "Publishing $published"
+
+      # github.token is enough: the package is owned by this repo. --ignore-scripts
+      # keeps the postinstall warm-up from running on the runner.
+      - name: Publish to GitHub Packages
+        working-directory: staging/package
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          echo '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > .npmrc
+          npm publish --ignore-scripts --tag latest
+
       # --clobber overwrites the asset in place, so the download URL never
       # changes. --latest=false keeps this rolling build from stealing the
       # "Latest" badge from real version releases.
@@ -74,8 +108,16 @@ jobs:
             version: `${{ steps.pack.outputs.version }}`
             commit: ${{ github.sha }}
 
+            Token-free install (public repo):
+
             ```bash
             npm install -g ${{ github.server_url }}/${{ github.repository }}/releases/download/cli-latest/9router-latest.tgz
+            ```
+
+            Same build on GitHub Packages (needs a `read:packages` token in `.npmrc`):
+
+            ```bash
+            npm install -g ${{ steps.stage.outputs.published }}
             ```
         run: |
           gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
@@ -85,3 +127,14 @@ jobs:
               --latest=false
           gh release upload "$RELEASE_TAG" 9router-latest.tgz --clobber
           gh release edit "$RELEASE_TAG" --notes "$NOTES"
+
+      - name: Summary
+        run: |
+          {
+            echo "### 9Router CLI"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| GitHub Packages | \`${{ steps.stage.outputs.published }}\` (dist-tag \`latest\`) |"
+            echo "| Release asset   | \`${{ env.RELEASE_TAG }}/9router-latest.tgz\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
