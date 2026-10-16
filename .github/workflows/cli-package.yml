@@ -1,40 +1,34 @@
-name: Build CLI npm package
+name: Build CLI package
 
-# Manual only — on purpose. The build runs a full `next build` (several
-# minutes) and publishing burns a version number, so it is not something a
-# push should trigger. Default is build + artifact only; flip `publish` to
-# push the tarball to GitHub Packages.
+# Manual only, no inputs: press Run and it builds the CLI tarball and
+# overwrites the asset on the `cli-latest` release.
 #
-# GitHub Packages requires the package name to carry the owner's scope, so the
-# tarball is republished as @<owner>/9router. cli/package.json keeps its plain
-# `9router` name for npmjs.
+# Release asset instead of GitHub Packages on purpose: the npm registry on
+# GitHub refuses to republish an existing version (E409) and demands a token
+# even for public packages, so neither "always overwrite latest" nor "install
+# without a token" is possible there. A release asset on a public repo is
+# downloadable anonymously from a URL that never changes:
+#
+#   npm install -g https://github.com/<owner>/<repo>/releases/download/cli-latest/9router-latest.tgz
 on:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: "Publish to GitHub Packages (otherwise build + upload artifact only)"
-        required: false
-        default: false
-        type: boolean
-      dist_tag:
-        description: "npm dist-tag to publish under"
-        required: false
-        default: latest
-        type: string
 
-# One build at a time: the build mutates package.json (version sync) and a
-# second publish of the same version just fails later and wastes CI minutes.
+# One build at a time: the build mutates package.json (version sync) and two
+# runs would race to clobber the same release asset.
 concurrency:
   group: cli-package-${{ github.repository }}
   cancel-in-progress: false
 
+env:
+  RELEASE_TAG: cli-latest
+
 jobs:
   build:
-    name: Build${{ inputs.publish && ' and publish' || '' }}
+    name: Build and release
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -59,42 +53,35 @@ jobs:
         run: |
           npm --prefix cli run pack:cli
           version=$(node -p "require('./cli/package.json').version")
+          cp "9router-$version.tgz" 9router-latest.tgz
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tarball=9router-$version.tgz" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
           name: 9router-cli-${{ steps.pack.outputs.version }}
-          path: ${{ steps.pack.outputs.tarball }}
+          path: 9router-latest.tgz
           if-no-files-found: error
 
-      # Republish the built tarball under the owner scope instead of editing
-      # cli/package.json, so the repo keeps publishing as plain `9router` on
-      # npmjs. prepublishOnly is dropped because scripts/ isn't in the tarball.
-      - name: Stage scoped copy
-        if: ${{ inputs.publish }}
-        run: |
-          mkdir -p staging
-          tar -xzf "${{ steps.pack.outputs.tarball }}" -C staging
-          node -e '
-            const fs = require("fs");
-            const f = "staging/package/package.json";
-            const p = JSON.parse(fs.readFileSync(f, "utf8"));
-            p.name = "@${{ github.repository_owner }}/9router".toLowerCase();
-            p.publishConfig = { registry: "https://npm.pkg.github.com" };
-            p.repository = { type: "git", url: "git+${{ github.server_url }}/${{ github.repository }}.git" };
-            delete p.scripts.prepublishOnly;
-            fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
-            console.log(p.name + "@" + p.version);
-          '
-
-      # --ignore-scripts: the package's own postinstall is for end users, it has
-      # no business running on the publisher.
-      - name: Publish to GitHub Packages
-        if: ${{ inputs.publish }}
-        working-directory: staging/package
+      # --clobber overwrites the asset in place, so the download URL never
+      # changes. --latest=false keeps this rolling build from stealing the
+      # "Latest" badge from real version releases.
+      - name: Publish release asset
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          NOTES: |
+            Rolling build of the 9Router CLI — overwritten by every run of this workflow.
+
+            version: `${{ steps.pack.outputs.version }}`
+            commit: ${{ github.sha }}
+
+            ```bash
+            npm install -g ${{ github.server_url }}/${{ github.repository }}/releases/download/cli-latest/9router-latest.tgz
+            ```
         run: |
-          printf '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' > .npmrc
-          npm publish --ignore-scripts --tag "${{ inputs.dist_tag }}"
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" \
+              --title "9Router CLI — rolling build" \
+              --notes "$NOTES" \
+              --latest=false
+          gh release upload "$RELEASE_TAG" 9router-latest.tgz --clobber
+          gh release edit "$RELEASE_TAG" --notes "$NOTES"
