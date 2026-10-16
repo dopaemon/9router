@@ -1,0 +1,98 @@
+name: Build CLI npm package
+
+# Manual only — on purpose. The build runs a full `next build` (several
+# minutes) and publishing burns a version number, so it is not something a
+# push should trigger. Default is build + artifact only; flip `publish` to
+# push the tarball to GitHub Packages.
+#
+# GitHub Packages requires the package name to carry the owner's scope, so the
+# tarball is republished as @<owner>/9router. cli/package.json keeps its plain
+# `9router` name for npmjs.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to GitHub Packages (otherwise build + upload artifact only)"
+        required: false
+        default: false
+        type: boolean
+      dist_tag:
+        description: "npm dist-tag to publish under"
+        required: false
+        default: latest
+        type: string
+
+# One build at a time: the build mutates package.json (version sync) and a
+# second publish of the same version just fails later and wastes CI minutes.
+concurrency:
+  group: cli-package-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build${{ inputs.publish && ' and publish' || '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Root deps first: cli/scripts/build-cli.js shells out to `npm run build`
+      # in the repo root to produce the Next.js standalone bundle it packages.
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install CLI dependencies
+        run: npm --prefix cli ci --no-audit --no-fund
+
+      - name: Build and pack
+        id: pack
+        run: |
+          npm --prefix cli run pack:cli
+          version=$(node -p "require('./cli/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tarball=9router-$version.tgz" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 9router-cli-${{ steps.pack.outputs.version }}
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+
+      # Republish the built tarball under the owner scope instead of editing
+      # cli/package.json, so the repo keeps publishing as plain `9router` on
+      # npmjs. prepublishOnly is dropped because scripts/ isn't in the tarball.
+      - name: Stage scoped copy
+        if: ${{ inputs.publish }}
+        run: |
+          mkdir -p staging
+          tar -xzf "${{ steps.pack.outputs.tarball }}" -C staging
+          node -e '
+            const fs = require("fs");
+            const f = "staging/package/package.json";
+            const p = JSON.parse(fs.readFileSync(f, "utf8"));
+            p.name = "@${{ github.repository_owner }}/9router".toLowerCase();
+            p.publishConfig = { registry: "https://npm.pkg.github.com" };
+            p.repository = { type: "git", url: "git+${{ github.server_url }}/${{ github.repository }}.git" };
+            delete p.scripts.prepublishOnly;
+            fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
+            console.log(p.name + "@" + p.version);
+          '
+
+      # --ignore-scripts: the package's own postinstall is for end users, it has
+      # no business running on the publisher.
+      - name: Publish to GitHub Packages
+        if: ${{ inputs.publish }}
+        working-directory: staging/package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          printf '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' > .npmrc
+          npm publish --ignore-scripts --access restricted --tag "${{ inputs.dist_tag }}"
