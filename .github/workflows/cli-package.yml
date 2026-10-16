@@ -86,13 +86,19 @@ jobs:
           echo "published=$published" >> "$GITHUB_OUTPUT"
           echo "Publishing $published"
 
-      # github.token is enough: the package is owned by this repo. --ignore-scripts
-      # keeps the postinstall warm-up from running on the runner.
+      # Needs a PAT, not github.token: @dopaemon/9router is owned by the user
+      # account and not linked to this repo, so the built-in token only gets
+      # `permission_denied: write_package`. GH_TOKEN must carry write:packages.
+      # --ignore-scripts keeps the postinstall warm-up off the runner.
       - name: Publish to GitHub Packages
         working-directory: staging/package
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::secret GH_TOKEN is empty - a PAT with write:packages is required"
+            exit 1
+          fi
           echo '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > .npmrc
           npm publish --ignore-scripts --tag latest
 
