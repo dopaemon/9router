@@ -95,4 +95,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           printf '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' > .npmrc
-          npm publish --ignore-scripts --access restricted --tag "${{ inputs.dist_tag }}"
+          npm publish --ignore-scripts --tag "${{ inputs.dist_tag }}"
