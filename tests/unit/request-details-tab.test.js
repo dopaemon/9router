@@ -37,7 +37,7 @@ afterAll(() => {
 describe("request details — tab crash-risk cases", () => {
   it("corrupt data column → parseJson fallback {}, no throw", async () => {
     // Inject a row with invalid JSON directly, bypassing save path
-    adapter.run(
+    await adapter.run(
       `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
       ["corrupt-1", new Date().toISOString(), "openai", "gpt-4", null, "ok", "{not-valid-json"]
     );
@@ -98,7 +98,7 @@ describe("request details — tab crash-risk cases", () => {
   });
 
   it("missing tokens/timestamp on row → getInputTokens-style access safe", async () => {
-    adapter.run(
+    await adapter.run(
       `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
       ["sparse-1", new Date().toISOString(), "openai", null, null, null, JSON.stringify({ id: "sparse-1" })]
     );
@@ -129,7 +129,7 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
     await saveDetail({ id: "bk-1", provider: "openai", model: "m", status: "ok", tokens: {}, request: {}, response: {} });
 
     const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-bklite-"));
-    const dest = backupDbLite(adapter, backupDir);
+    const dest = await backupDbLite(adapter, backupDir);
     expect(fs.existsSync(dest)).toBe(true);
 
     // Open backup and assert requestDetails is empty, settings present

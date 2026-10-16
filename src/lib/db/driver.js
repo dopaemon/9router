@@ -56,7 +56,30 @@ async function trySqlJs() {
   }
 }
 
+// Supabase / any Postgres. Explicit opt-in via connection string — when set it
+// wins over the local SQLite file and there is NO silent fallback: a bad URL
+// must fail loudly rather than quietly serving an empty local DB (which would
+// look like total data loss, and would hand out fresh API keys).
+export function getPostgresUrl() {
+  const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || "";
+  return url.trim() || null;
+}
+
 async function initAdapter() {
+  const pgUrl = getPostgresUrl();
+  if (pgUrl) {
+    const { createPostgresAdapter } = await import("./adapters/postgresAdapter.js");
+    const adapter = await createPostgresAdapter(pgUrl);
+    if (!state.logged) {
+      // Never log the URL itself — it carries the DB password.
+      console.log(`[DB] Driver: ${adapter.driver} | host: ${safeHost(pgUrl)}`);
+      state.logged = true;
+    }
+    const { runMigrationOnce } = await import("./migrate.js");
+    await runMigrationOnce(adapter);
+    return adapter;
+  }
+
   ensureDirs();
   // Order per runtime:
   //   Bun:  bun:sqlite → sql.js
@@ -81,6 +104,11 @@ export async function getAdapter() {
   if (state.instance) return state.instance;
   if (!state.initPromise) state.initPromise = initAdapter().then((a) => { state.instance = a; return a; });
   return state.initPromise;
+}
+
+function safeHost(url) {
+  try { const u = new URL(url); return `${u.hostname}:${u.port || 5432}${u.pathname}`; }
+  catch { return "unknown"; }
 }
 
 export function getAdapterSync() {

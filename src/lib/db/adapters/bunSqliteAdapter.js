@@ -1,6 +1,7 @@
 // Bun runtime adapter — uses built-in bun:sqlite (native, fastest under Bun).
 // Loaded only when process.versions.bun is present.
 import { PRAGMA_SQL } from "../schema.js";
+import { createSerializer, sqliteListColumns } from "./sqliteShared.js";
 
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
@@ -35,24 +36,22 @@ export async function createBunSqliteAdapter(filePath) {
   process.once("SIGINT", () => { onShutdown(); process.exit(0); });
   process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
 
-  return {
+  const ser = createSerializer((sql) => db.exec(sql));
+
+  const adapter = {
     driver: "bun:sqlite",
+    dialect: "sqlite",
     run(sql, params = []) {
-      const r = prepare(sql).run(...params);
-      return { changes: Number(r.changes ?? 0), lastInsertRowid: Number(r.lastInsertRowid ?? 0) };
+      return ser.op(() => {
+        const r = prepare(sql).run(...params);
+        return { changes: Number(r.changes ?? 0), lastInsertRowid: Number(r.lastInsertRowid ?? 0) };
+      });
     },
-    get(sql, params = []) {
-      return prepare(sql).get(...params);
-    },
-    all(sql, params = []) {
-      return prepare(sql).all(...params);
-    },
-    exec(sql) { return db.exec(sql); },
-    transaction(fn) {
-      // bun:sqlite has db.transaction() API (similar to better-sqlite3)
-      const tx = db.transaction(fn);
-      return tx();
-    },
+    get(sql, params = []) { return ser.op(() => prepare(sql).get(...params)); },
+    all(sql, params = []) { return ser.op(() => prepare(sql).all(...params)); },
+    exec(sql) { return ser.op(() => db.exec(sql)); },
+    transaction(fn) { return ser.transaction(fn, adapter); },
+    listColumns(table) { return sqliteListColumns((sql) => adapter.all(sql), table); },
     checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
     close() {
       clearInterval(checkpointTimer);
@@ -60,4 +59,5 @@ export async function createBunSqliteAdapter(filePath) {
     },
     raw: db,
   };
+  return adapter;
 }

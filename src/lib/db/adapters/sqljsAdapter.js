@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
+import { createSerializer, sqliteListColumns } from "./sqliteShared.js";
 
 let SQL = null;
 
@@ -43,7 +44,9 @@ export async function createSqlJsAdapter(filePath) {
     return params;
   }
 
-  function run(sql, params = []) {
+  const ser = createSerializer((sql) => db.exec(sql));
+
+  function runRaw(sql, params = []) {
     const stmt = db.prepare(sql);
     try {
       stmt.bind(paramsObj(params));
@@ -57,7 +60,7 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
-  function get(sql, params = []) {
+  function getRaw(sql, params = []) {
     const stmt = db.prepare(sql);
     try {
       stmt.bind(paramsObj(params));
@@ -68,7 +71,7 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
-  function all(sql, params = []) {
+  function allRaw(sql, params = []) {
     const stmt = db.prepare(sql);
     try {
       stmt.bind(paramsObj(params));
@@ -80,23 +83,24 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
-  function exec(sql) {
+  function execRaw(sql) {
     db.exec(sql);
     scheduleSave();
   }
 
-  function transaction(fn) {
-    const sp = `sp_${Math.random().toString(36).slice(2)}`;
-    db.exec(`SAVEPOINT ${sp}`);
-    try {
-      const result = fn();
-      db.exec(`RELEASE ${sp}`);
-      scheduleSave();
-      return result;
-    } catch (e) {
-      try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
-      throw e;
-    }
+  const run = (sql, params = []) => ser.op(() => runRaw(sql, params));
+  const get = (sql, params = []) => ser.op(() => getRaw(sql, params));
+  const all = (sql, params = []) => ser.op(() => allRaw(sql, params));
+  const exec = (sql) => ser.op(() => execRaw(sql));
+
+  async function transaction(fn) {
+    const r = await ser.transaction(fn, adapter);
+    scheduleSave();
+    return r;
+  }
+
+  function listColumns(table) {
+    return sqliteListColumns(all, table);
   }
 
   function close() {
@@ -111,5 +115,7 @@ export async function createSqlJsAdapter(filePath) {
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  const adapter = { driver: "sql.js", dialect: "sqlite", run, get, all, exec, transaction, listColumns, close, raw: db };
+
+  return adapter;
 }

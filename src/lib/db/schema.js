@@ -1,3 +1,5 @@
+import { columnDefFor } from "./sqlDialect.js";
+
 // ⚠️ AGENT/DEV: Bump this by +1 EVERY TIME you change the schema below
 // (add/remove/alter a table, column, or index in TABLES). It drives the
 // pre-change safety backup in migrate.js: when the stored version is lower,
@@ -158,8 +160,8 @@ export const TABLES = {
   },
 };
 
-export function buildCreateTableSql(name, def) {
-  const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${v}`);
+export function buildCreateTableSql(name, def, dialect = "sqlite") {
+  const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${columnDefFor(dialect, v)}`);
   if (def.primaryKey) cols.push(def.primaryKey);
   return `CREATE TABLE IF NOT EXISTS ${name} (${cols.join(", ")})`;
 }

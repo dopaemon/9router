@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { PRAGMA_SQL } from "../schema.js";
+import { createSerializer, sqliteListColumns } from "./sqliteShared.js";
 
 // Periodic checkpoint to keep WAL file small (avoid huge -wal/-shm growth)
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
@@ -38,13 +39,17 @@ export function createBetterSqliteAdapter(filePath) {
   process.once("SIGINT", () => { onShutdown(); process.exit(0); });
   process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
 
-  return {
+  const ser = createSerializer((sql) => db.exec(sql));
+
+  const adapter = {
     driver: "better-sqlite3",
-    run(sql, params = []) { return prepare(sql).run(...params); },
-    get(sql, params = []) { return prepare(sql).get(...params); },
-    all(sql, params = []) { return prepare(sql).all(...params); },
-    exec(sql) { return db.exec(sql); },
-    transaction(fn) { return db.transaction(fn)(); },
+    dialect: "sqlite",
+    run(sql, params = []) { return ser.op(() => prepare(sql).run(...params)); },
+    get(sql, params = []) { return ser.op(() => prepare(sql).get(...params)); },
+    all(sql, params = []) { return ser.op(() => prepare(sql).all(...params)); },
+    exec(sql) { return ser.op(() => db.exec(sql)); },
+    transaction(fn) { return ser.transaction(fn, adapter); },
+    listColumns(table) { return sqliteListColumns((sql) => adapter.all(sql), table); },
     checkpoint() { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} },
     close() {
       clearInterval(checkpointTimer);
@@ -52,4 +57,5 @@ export function createBetterSqliteAdapter(filePath) {
     },
     raw: db,
   };
+  return adapter;
 }
