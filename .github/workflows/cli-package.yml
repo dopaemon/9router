@@ -42,15 +42,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
+      # No `npm ci` and no `cache: npm`: package-lock.json is gitignored in this
+      # repo (.gitignore:63), so there is no lockfile on a fresh checkout.
+      #
       # Root deps first: cli/scripts/build-cli.js shells out to `npm run build`
       # in the repo root to produce the Next.js standalone bundle it packages.
       - name: Install root dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Install CLI dependencies
-        run: npm --prefix cli ci --no-audit --no-fund
+        run: npm --prefix cli install --no-audit --no-fund
 
       - name: Build and pack
         id: pack
