@@ -255,50 +255,56 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       .catch(() => {});
   }, []);
 
-  // Fetch filtered stats via REST when period changes
-  useEffect(() => {
-    // First load: show full spinner; subsequent: show subtle fetching indicator
-    if (isInitialLoad.current) {
-      isInitialLoad.current = false;
-      setLoading(true);
-    } else {
-      setFetching(true);
-    }
+  // Fetch stats via REST
+  const fetchStats = useCallback(async (isInitial = false, isUserAction = false) => {
+    if (isInitial) setLoading(true);
+    if (isUserAction) setFetching(true);
 
-    fetch(`/api/usage/stats?period=${period}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
+    try {
+      const res = await fetch(`/api/usage/stats?period=${period}`);
+      if (res.ok) {
+        const data = await res.json();
         if (data) {
           hasLoadedStats.current = true;
           setStats((prev) => ({ ...prev, ...data }));
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-        setFetching(false);
-      });
+      }
+    } catch (e) {
+      console.error("[UsageStats] fetch error:", e);
+    } finally {
+      if (isInitial) setLoading(false);
+      if (isUserAction) setFetching(false);
+    }
   }, [period]);
 
-  // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const initial = isInitialLoad.current;
+    if (initial) isInitialLoad.current = false;
+    fetchStats(initial, !initial);
+  }, [fetchStats]);
+
+  // Periodic background poll every 5s when document is visible (multi-server sync)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchStats(false, false);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  // SSE connection - instant real-time push for the selected period
+  useEffect(() => {
+    const es = new EventSource(`/api/usage/stream?period=${period}`);
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Always merge only real-time fields, never overwrite full stats from REST
-        setStats((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            activeRequests: data.activeRequests,
-            recentRequests: data.recentRequests,
-            errorProvider: data.errorProvider,
-            pending: data.pending,
-          };
-        });
-        if (hasLoadedStats.current) setLoading(false);
+        if (data) {
+          setStats((prev) => ({ ...prev, ...data }));
+          if (hasLoadedStats.current) setLoading(false);
+        }
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
@@ -307,7 +313,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [period]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());

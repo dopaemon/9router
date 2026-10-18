@@ -131,8 +131,8 @@ export default function RequestDetailsTab() {
     }
   }, []);
 
-  const fetchDetails = useCallback(async () => {
-    setLoading(true);
+  const fetchDetails = useCallback(async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     try {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
@@ -150,7 +150,7 @@ export default function RequestDetailsTab() {
     } catch (error) {
       console.error("Failed to fetch request details:", error);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, [pagination.page, pagination.pageSize, filters]);
 
@@ -159,9 +159,19 @@ export default function RequestDetailsTab() {
   }, [fetchProviders]);
 
   useEffect(() => {
-    fetchDetails();
+    fetchDetails(true);
   }, [fetchDetails]);
 
+  // Real-time auto-refresh on page 1 when no historic date filters active
+  useEffect(() => {
+    if (pagination.page !== 1 || filters.startDate || filters.endDate) return;
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchDetails(false);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [pagination.page, filters.startDate, filters.endDate, fetchDetails]);
   const handleViewDetail = (detail) => {
     setSelectedDetail(detail);
     setIsDrawerOpen(true);
