@@ -21,20 +21,63 @@ export async function createPostgresAdapter(connectionString) {
     ? false
     : { rejectUnauthorized: process.env.PGSSL_NO_VERIFY !== "1" };
 
-  const pool = new Pool({
-    connectionString,
-    ssl,
-    max: Number(process.env.PGPOOL_MAX) || DEFAULT_POOL_MAX,
-    // A hung query must not wedge a request forever.
-    statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS) || 15000,
-  });
-  // Pool-level errors on idle clients are emitted, not thrown — unhandled they
-  // kill the process.
-  pool.on("error", (e) => console.warn(`[DB] postgres idle client error: ${e.message}`));
+  async function resolvePoolWithFallback() {
+    const p = new Pool({
+      connectionString,
+      ssl,
+      max: Number(process.env.PGPOOL_MAX) || DEFAULT_POOL_MAX,
+      statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS) || 15000,
+      connectionTimeoutMillis: 5000,
+    });
 
-  // Fail fast at boot rather than on the first user request.
-  const probe = await pool.connect();
-  probe.release();
+    try {
+      const probe = await p.connect();
+      probe.release();
+      return p;
+    } catch (err) {
+      await p.end().catch(() => {});
+
+      // Supabase direct host (db.<ref>.supabase.co) only exposes IPv6 (AAAA).
+      // On IPv4-only networks (most VPS/containers), dns.lookup fails with ENOTFOUND.
+      // Auto-fallback to the IPv4-compatible transaction pooler (port 6543).
+      let parsed;
+      try { parsed = new URL(connectionString); } catch {}
+      const m = parsed?.hostname?.match(/^db\.([a-z0-9]+)\.supabase\.co$/);
+      if (m && (err.code === "ENOTFOUND" || err.code === "ETIMEDOUT" || err.message?.includes("ENOTFOUND"))) {
+        const ref = m[1];
+        const regions = [
+          "ap-southeast-1", "us-east-1", "eu-central-1", "ap-southeast-2",
+          "us-west-1", "eu-west-1", "sa-east-1", "ap-northeast-1", "ap-south-1"
+        ];
+        for (const reg of regions) {
+          const poolerHost = `aws-0-${reg}.pooler.supabase.com`;
+          const testUrl = new URL(connectionString);
+          testUrl.hostname = poolerHost;
+          testUrl.port = "6543";
+          testUrl.username = testUrl.username.includes(".") ? testUrl.username : `${testUrl.username}.${ref}`;
+
+          const fallbackPool = new Pool({
+            connectionString: testUrl.toString(),
+            ssl,
+            max: Number(process.env.PGPOOL_MAX) || DEFAULT_POOL_MAX,
+            statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS) || 15000,
+            connectionTimeoutMillis: 3000,
+          });
+          try {
+            const client = await fallbackPool.connect();
+            client.release();
+            console.warn(`[DB] Supabase direct host has no IPv4 in this network. Automatically routed via transaction pooler: ${poolerHost}:6543`);
+            return fallbackPool;
+          } catch {
+            await fallbackPool.end().catch(() => {});
+          }
+        }
+      }
+      throw err;
+    }
+  }
+
+  const pool = await resolvePoolWithFallback();
 
   const query = async (client, sql, params) => {
     const r = await client.query(toPgSql(sql), params);
