@@ -88,14 +88,18 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
-    disabledModels: {},
   };
 
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
-  for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`)) out.disabledModels[r.key] = parseJson(r.value, []);
+
+  const disabledRows = await db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`);
+  if (disabledRows.length > 0) {
+    out.disabledModels = {};
+    for (const r of disabledRows) out.disabledModels[r.key] = parseJson(r.value, []);
+  }
 
   return out;
 }
