@@ -1,6 +1,9 @@
 {
-  "name": "9router",
-  "version": "0.5.104",
+  "name": "@dopaemon/9router",
+  "version": "0.5.105",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
     "9router": "./cli.js"

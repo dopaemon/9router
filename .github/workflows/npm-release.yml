@@ -68,13 +68,16 @@ jobs:
         run: npm --prefix cli install --no-audit --no-fund
 
       - name: Build and pack CLI package
+        id: pack
         run: |
           npm --prefix cli run pack:cli
-          TARBALL="9router-${{ steps.version.outputs.new_version }}.tgz"
-          if [ ! -f "$TARBALL" ]; then
-            echo "::error::Tarball $TARBALL not found after packing"
+          TARBALL=$(ls *.tgz | head -n 1)
+          if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+            echo "::error::No tarball found after packing"
             exit 1
           fi
+          echo "Found tarball: $TARBALL"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
         env:
@@ -85,8 +88,7 @@ jobs:
             exit 1
           fi
           echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" > .npmrc
-          npm publish "9router-${{ steps.version.outputs.new_version }}.tgz" --ignore-scripts --tag latest
-
+          npm publish "${{ steps.pack.outputs.tarball }}" --access public --ignore-scripts --tag latest
       - name: Commit version bump and create Git tag
         run: |
           git config user.name "github-actions[bot]"
@@ -105,5 +107,5 @@ jobs:
             echo "|---|---|"
             echo "| Previous Version | \`${{ steps.version.outputs.current_version }}\` |"
             echo "| Published Version | \`${{ steps.version.outputs.new_version }}\` |"
-            echo "| Registry | [https://www.npmjs.com/package/9router](https://www.npmjs.com/package/9router) |"
+            echo "| Registry | [https://www.npmjs.com/package/@dopaemon/9router](https://www.npmjs.com/package/@dopaemon/9router) |"
           } >> "$GITHUB_STEP_SUMMARY"
