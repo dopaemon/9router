@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exportDb, getSettings, importDb } from "@/lib/localDb";
+import { exportDb, getSettings, importDb, resetDb } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
 
@@ -46,6 +46,31 @@ export async function POST(request) {
     return NextResponse.json(
       { error: error?.message || "Failed to import database" },
       { status: 400 }
+    );
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const { password } = await request.json().catch(() => ({}));
+    if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
+      return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    }
+    await resetDb(true);
+
+    try {
+      const settings = await getSettings();
+      applyOutboundProxyEnv(settings);
+    } catch (err) {
+      console.warn("[Settings][DatabaseReset] Failed to re-apply outbound proxy env:", err);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error resetting database:", error);
+    return NextResponse.json(
+      { error: error?.message || "Failed to reset database" },
+      { status: 500 }
     );
   }
 }

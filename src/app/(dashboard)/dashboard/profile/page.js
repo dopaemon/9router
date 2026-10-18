@@ -731,12 +731,37 @@ export default function ProfilePage() {
     }
   };
 
-  // Confirm password modal, then run export or import.
+  const handleResetDatabase = async (password) => {
+    setDbLoading(true);
+    setDbStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/database", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to reset database");
+      }
+
+      await reloadSettings();
+      setDbStatus({ type: "success", message: "Database reset successfully. All data wiped clean." });
+    } catch (err) {
+      setDbStatus({ type: "error", message: err.message || "Failed to reset database" });
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  // Confirm password modal, then run export, import, or reset.
   const handleDbAuthConfirm = async () => {
     const { mode, password } = dbAuth;
     setDbAuth({ open: false, mode: "", password: "" });
     if (mode === "export") await handleExportDatabase(password);
     else if (mode === "import") await runImportDatabase(password);
+    else if (mode === "reset") await handleResetDatabase(password);
   };
 
   const observabilityEnabled = settings.enableObservability === true;
@@ -803,8 +828,15 @@ export default function ProfilePage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
                 <p className="font-medium text-sm sm:text-base">Database Location</p>
-                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">
+                  {settings.dbLocation || "~/.9router/db/data.sqlite"}
+                </p>
               </div>
+              {settings.dbDriver && (
+                <span className="text-xs px-2.5 py-1 rounded-full font-mono font-medium self-start sm:self-center bg-brand-500/10 text-brand-600 dark:text-brand-300 border border-brand-500/20">
+                  {settings.dbDriver.toUpperCase()}
+                </span>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <Button
@@ -824,6 +856,15 @@ export default function ProfilePage() {
                 className="w-full sm:w-auto"
               >
                 Import Backup
+              </Button>
+              <Button
+                variant="danger"
+                icon="delete_forever"
+                onClick={() => setDbAuth({ open: true, mode: "reset", password: "" })}
+                disabled={dbLoading}
+                className="w-full sm:w-auto"
+              >
+                Reset Database
               </Button>
               <input
                 ref={importFileRef}
@@ -1672,21 +1713,32 @@ export default function ProfilePage() {
       <Modal
         isOpen={dbAuth.open}
         onClose={() => setDbAuth({ open: false, mode: "", password: "" })}
-        title="Confirm Password"
+        title={dbAuth.mode === "reset" ? "Reset Database" : "Confirm Password"}
         size="sm"
         footer={
           <>
             <Button variant="ghost" onClick={() => setDbAuth({ open: false, mode: "", password: "" })} disabled={dbLoading}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleDbAuthConfirm} loading={dbLoading} disabled={!dbAuth.password}>
-              Confirm
+            <Button
+              variant={dbAuth.mode === "reset" ? "danger" : "primary"}
+              onClick={handleDbAuthConfirm}
+              loading={dbLoading}
+              disabled={!dbAuth.password}
+            >
+              {dbAuth.mode === "reset" ? "Reset & Wipe All" : "Confirm"}
             </Button>
           </>
         }
       >
         <p className="text-text-muted mb-3 text-sm">
-          Enter your current password to {dbAuth.mode === "export" ? "export" : "import"} the database.
+          {dbAuth.mode === "reset" ? (
+            <span className="text-red-500 font-medium">
+              Cảnh báo: Hành động này sẽ xóa vĩnh viễn toàn bộ connection, combo, API key, lịch sử usage và reset toàn bộ settings về mặc định. Nhập mật khẩu hiện tại để xác nhận:
+            </span>
+          ) : (
+            `Enter your current password to ${dbAuth.mode === "export" ? "export" : "import"} the database.`
+          )}
         </p>
         <Input
           type="password"

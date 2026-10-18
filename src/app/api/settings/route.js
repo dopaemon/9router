@@ -22,12 +22,26 @@ export async function GET() {
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
-    
+
+    const pgUrl = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+    const dbDriver = pgUrl ? "postgres" : "sqlite";
+    let dbLocation = "~/.9router/db/data.sqlite";
+    if (pgUrl) {
+      try {
+        const parsed = new URL(pgUrl);
+        dbLocation = `Supabase / Postgres (${parsed.hostname})`;
+      } catch {
+        dbLocation = "Supabase / Postgres";
+      }
+    }
+
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
       enableTranslator,
-      hasPassword: !!password
+      hasPassword: !!password,
+      dbDriver,
+      dbLocation,
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error getting settings:", error);

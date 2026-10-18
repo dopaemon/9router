@@ -88,12 +88,14 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
+    disabledModels: {},
   };
 
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
+  for (const r of await db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`)) out.disabledModels[r.key] = parseJson(r.value, []);
 
   return out;
 }
@@ -112,13 +114,23 @@ export async function importDb(payload) {
     await tx.run(`DELETE FROM proxyPools`);
     await tx.run(`DELETE FROM apiKeys`);
     await tx.run(`DELETE FROM combos`);
-    await tx.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    await tx.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing', 'disabledModels')`);
+
+    // Preserve existing password if payload does not supply one
+    let preservedPassword = null;
+    const cur = await tx.get(`SELECT data FROM settings WHERE id = 1`);
+    if (cur) {
+      preservedPassword = parseJson(cur.data, {})?.password || null;
+    }
 
     // Settings
     if (payload.settings) {
-      await tx.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(payload.settings)]);
+      const settingsToSave = { ...payload.settings };
+      if (!settingsToSave.password && preservedPassword) {
+        settingsToSave.password = preservedPassword;
+      }
+      await tx.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(settingsToSave)]);
     }
-
     for (const c of payload.providerConnections || []) {
       const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
       await tx.run(
@@ -174,9 +186,54 @@ export async function importDb(payload) {
     for (const [provider, models] of Object.entries(payload.pricing || {})) {
       await tx.run(KV_UPSERT, ["pricing", provider, stringifyJson(models || {})]);
     }
+    for (const [provider, models] of Object.entries(payload.disabledModels || {})) {
+      await tx.run(KV_UPSERT, ["disabledModels", provider, stringifyJson(models || [])]);
+    }
   });
 
   return await exportDb();
+}
+
+export async function resetDb(keepPassword = true) {
+  const db = await getAdapter();
+  const { DEFAULT_SETTINGS } = await import("./repos/settingsRepo.js");
+
+  await db.transaction(async (tx) => {
+    let preservedPassword = null;
+    if (keepPassword) {
+      const cur = await tx.get(`SELECT data FROM settings WHERE id = 1`);
+      if (cur) {
+        preservedPassword = parseJson(cur.data, {})?.password || null;
+      }
+    }
+
+    await tx.run(`DELETE FROM settings`);
+    await tx.run(`DELETE FROM providerConnections`);
+    await tx.run(`DELETE FROM providerNodes`);
+    await tx.run(`DELETE FROM proxyPools`);
+    await tx.run(`DELETE FROM apiKeys`);
+    await tx.run(`DELETE FROM combos`);
+    await tx.run(`DELETE FROM kv`);
+    await tx.run(`DELETE FROM usageHistory`);
+    await tx.run(`DELETE FROM usageDaily`);
+    await tx.run(`DELETE FROM requestDetails`);
+    await tx.run(`DELETE FROM _meta WHERE key = 'totalRequestsLifetime'`);
+
+    const newSettings = { ...DEFAULT_SETTINGS };
+    if (preservedPassword) {
+      newSettings.password = preservedPassword;
+    }
+    await tx.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson(newSettings)]
+    );
+  });
+
+  if (global._recentRing) global._recentRing.items = [];
+  if (global._pendingRequests) global._pendingRequests = { byModel: {}, byAccount: {} };
+  if (global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
+
+  return { success: true };
 }
 
 // Eager init helper (optional)
