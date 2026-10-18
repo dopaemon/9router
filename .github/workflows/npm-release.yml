@@ -2,31 +2,6 @@ name: Release and Publish CLI to npm
 
 on:
   workflow_dispatch:
-    inputs:
-      bump_type:
-        description: "Version bump type"
-        required: true
-        default: "patch"
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-          - custom
-      custom_version:
-        description: "Custom version (required if bump_type is 'custom', e.g. 0.5.105)"
-        required: false
-        type: string
-      npm_tag:
-        description: "npm dist-tag"
-        required: true
-        default: "latest"
-        type: string
-      dry_run:
-        description: "Dry run (build and pack without publishing to npm or pushing git tags)"
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: npm-release-${{ github.repository }}
@@ -54,31 +29,14 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
 
-      - name: Compute and bump version
+      - name: Bump patch version
         id: version
         run: |
           CURRENT_VERSION=$(node -p "require('./cli/package.json').version")
-          BUMP_TYPE="${{ github.event.inputs.bump_type }}"
-          CUSTOM_VER="${{ github.event.inputs.custom_version }}"
-
           NEW_VERSION=$(node -e "
             const cur = '$CURRENT_VERSION';
-            const type = '$BUMP_TYPE';
-            const custom = '$CUSTOM_VER';
             let [major, minor, patch] = cur.split('-')[0].split('.').map(Number);
-            if (type === 'custom') {
-              if (!custom) {
-                console.error('custom_version is required when bump_type is custom');
-                process.exit(1);
-              }
-              process.stdout.write(custom.replace(/^v/, '').trim());
-            } else if (type === 'major') {
-              process.stdout.write(\`\${major + 1}.0.0\`);
-            } else if (type === 'minor') {
-              process.stdout.write(\`\${major}.\${minor + 1}.0\`);
-            } else {
-              process.stdout.write(\`\${major}.\${minor}.\${patch + 1}\`);
-            }
+            process.stdout.write(\`\${major}.\${minor}.\${patch + 1}\`);
           ")
 
           echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
@@ -119,7 +77,6 @@ jobs:
           fi
 
       - name: Publish to npm
-        if: ${{ github.event.inputs.dry_run != 'true' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -128,10 +85,9 @@ jobs:
             exit 1
           fi
           echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" > .npmrc
-          npm publish "9router-${{ steps.version.outputs.new_version }}.tgz" --ignore-scripts --tag "${{ github.event.inputs.npm_tag }}"
+          npm publish "9router-${{ steps.version.outputs.new_version }}.tgz" --ignore-scripts --tag latest
 
       - name: Commit version bump and create Git tag
-        if: ${{ github.event.inputs.dry_run != 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -139,6 +95,7 @@ jobs:
           git commit -s -m "chore(release): bump CLI version to ${{ steps.version.outputs.new_version }} [skip ci]"
           git tag "v${{ steps.version.outputs.new_version }}"
           git push origin "HEAD:${{ github.ref_name }}" --tags
+
       - name: Summary
         run: |
           {
@@ -148,7 +105,5 @@ jobs:
             echo "|---|---|"
             echo "| Previous Version | \`${{ steps.version.outputs.current_version }}\` |"
             echo "| Published Version | \`${{ steps.version.outputs.new_version }}\` |"
-            echo "| npm dist-tag | \`${{ github.event.inputs.npm_tag }}\` |"
-            echo "| Dry run | \`${{ github.event.inputs.dry_run }}\` |"
             echo "| Registry | [https://www.npmjs.com/package/9router](https://www.npmjs.com/package/9router) |"
           } >> "$GITHUB_STEP_SUMMARY"
