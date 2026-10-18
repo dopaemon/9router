@@ -1,0 +1,154 @@
+name: Release and Publish CLI to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: "Version bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: "Custom version (required if bump_type is 'custom', e.g. 0.5.105)"
+        required: false
+        type: string
+      npm_tag:
+        description: "npm dist-tag"
+        required: true
+        default: "latest"
+        type: string
+      dry_run:
+        description: "Dry run (build and pack without publishing to npm or pushing git tags)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: npm-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, Version, and Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Compute and bump version
+        id: version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./cli/package.json').version")
+          BUMP_TYPE="${{ github.event.inputs.bump_type }}"
+          CUSTOM_VER="${{ github.event.inputs.custom_version }}"
+
+          NEW_VERSION=$(node -e "
+            const cur = '$CURRENT_VERSION';
+            const type = '$BUMP_TYPE';
+            const custom = '$CUSTOM_VER';
+            let [major, minor, patch] = cur.split('-')[0].split('.').map(Number);
+            if (type === 'custom') {
+              if (!custom) {
+                console.error('custom_version is required when bump_type is custom');
+                process.exit(1);
+              }
+              process.stdout.write(custom.replace(/^v/, '').trim());
+            } else if (type === 'major') {
+              process.stdout.write(\`\${major + 1}.0.0\`);
+            } else if (type === 'minor') {
+              process.stdout.write(\`\${major}.\${minor + 1}.0\`);
+            } else {
+              process.stdout.write(\`\${major}.\${minor}.\${patch + 1}\`);
+            }
+          ")
+
+          echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
+          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+          # Update cli/package.json
+          node -e "
+            const fs = require('fs');
+            const p = './cli/package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # Update root package.json
+          node -e "
+            const fs = require('fs');
+            const p = './package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Install root dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install CLI dependencies
+        run: npm --prefix cli install --no-audit --no-fund
+
+      - name: Build and pack CLI package
+        run: |
+          npm --prefix cli run pack:cli
+          TARBALL="9router-${{ steps.version.outputs.new_version }}.tgz"
+          if [ ! -f "$TARBALL" ]; then
+            echo "::error::Tarball $TARBALL not found after packing"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::Secret NPM_TOKEN is required to publish to registry.npmjs.org"
+            exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" > .npmrc
+          npm publish "9router-${{ steps.version.outputs.new_version }}.tgz" --ignore-scripts --tag "${{ github.event.inputs.npm_tag }}"
+
+      - name: Commit version bump and create Git tag
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json cli/package.json
+          git commit -s -m "chore(release): bump CLI version to ${{ steps.version.outputs.new_version }} [skip ci]"
+          git tag "v${{ steps.version.outputs.new_version }}"
+          git push origin "HEAD:${{ github.ref_name }}" --tags
+      - name: Summary
+        run: |
+          {
+            echo "### 🚀 9Router CLI npm Release"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Previous Version | \`${{ steps.version.outputs.current_version }}\` |"
+            echo "| Published Version | \`${{ steps.version.outputs.new_version }}\` |"
+            echo "| npm dist-tag | \`${{ github.event.inputs.npm_tag }}\` |"
+            echo "| Dry run | \`${{ github.event.inputs.dry_run }}\` |"
+            echo "| Registry | [https://www.npmjs.com/package/9router](https://www.npmjs.com/package/9router) |"
+          } >> "$GITHUB_STEP_SUMMARY"
