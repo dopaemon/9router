@@ -210,6 +210,36 @@ function getAppDataDir() {
     : path.join(os.homedir(), ".9router");
 }
 
+function loadEnvFiles() {
+  const candidatePaths = [
+    path.join(getAppDataDir(), ".env"),
+    path.join(process.cwd(), ".env"),
+  ];
+  for (const p of candidatePaths) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      const content = fs.readFileSync(p, "utf8");
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eqIdx = trimmed.indexOf("=");
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx).trim();
+          let val = trimmed.slice(eqIdx + 1).trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (process.env[key] === undefined) {
+            process.env[key] = val;
+          }
+        }
+      }
+    } catch {}
+  }
+}
+
+loadEnvFiles();
+
 // Kill PID from file (best-effort, removes file after)
 function killByPidFile(pidFile) {
   try {
