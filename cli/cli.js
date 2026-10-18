@@ -136,6 +136,7 @@ let noBrowser = false;
 let skipUpdate = false;
 let showLog = false;
 let trayMode = false;
+let headless = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--port" || args[i] === "-p") {
@@ -153,6 +154,8 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === "--tray" || args[i] === "-t") {
     trayMode = true;
     process.env.TRAY_MODE = "1";
+  } else if (args[i] === "--headless") {
+    headless = true;
   } else if (args[i] === "--help" || args[i] === "-h") {
     console.log(`
 Usage: ${APP_NAME} [options]
@@ -163,6 +166,7 @@ Options:
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
+  --headless          Run in headless mode without interactive TUI menu
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
@@ -188,8 +192,9 @@ if (skipUpdate && !trayMode && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
-
-// Always use Node.js runtime with absolute path
+if (!process.stdin.isTTY || process.env.HEADLESS === "1") {
+  headless = true;
+}
 const RUNTIME = process.execPath;
 
 // Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
@@ -772,6 +777,13 @@ function startServer(updatePromise) {
     return;
   }
 
+  // Headless mode (Docker, Pterodactyl, background, CI, or --headless flag)
+  if (headless) {
+    waitServerReady(port).then(() => {
+      console.log(`\n🚀 ${pkg.name} v${pkg.version} running in headless mode at http://${displayHost}:${port}\n`);
+    });
+    return;
+  }
   // Wait for server to be ready, then show interface menu loop + tray
   waitServerReady(port).then(async () => {
     // Resolve parallel update check (already running); don't block server start on it.
