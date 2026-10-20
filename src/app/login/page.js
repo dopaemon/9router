@@ -33,14 +33,8 @@ export default function LoginPage() {
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
       try {
-        const setupRes = await fetch(`${baseUrl}/api/setup/status`, { signal: controller.signal }).catch(() => null);
-        if (setupRes && setupRes.ok) {
-          const setupData = await setupRes.json();
-          if (setupData.setupNeeded && !setupData.setupCompleted) {
-            window.location.assign("/setup");
-            return;
-          }
-        }
+        // If the user deliberately came to /login or has already finished setup,
+        // proceed directly with auth check instead of looping to /setup
 
         const res = await fetch(`${baseUrl}/api/auth/status`, {
           signal: controller.signal,

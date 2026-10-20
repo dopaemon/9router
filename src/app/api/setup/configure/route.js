@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { isSetupComplete, writeDbConfig, saveEnvConfig } from "@/lib/db/setupStatus.js";
 import { resetAdapter } from "@/lib/db/driver.js";
 import { isLocalRequest } from "@/dashboardGuard.js";
-
+import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 export async function POST(request) {
   try {
     // Only local requests or non-completed setups can configure the database
@@ -74,6 +75,14 @@ export async function POST(request) {
 
     // Re-initialize adapter with new config
     await resetAdapter();
+
+    // Auto-authenticate the setup session so the user is immediately logged in
+    try {
+      const cookieStore = await cookies();
+      await setDashboardAuthCookie(cookieStore, request);
+    } catch (authErr) {
+      console.warn("[DB][setup] Could not set auth cookie automatically:", authErr.message);
+    }
 
     return NextResponse.json({ success: true, driver: cfg.driver });
   } catch (error) {

@@ -69,7 +69,7 @@ export default function SetupPage() {
 
       setSuccess(true);
       setTimeout(() => {
-        window.location.assign("/dashboard");
+        window.location.assign("/login");
       }, 1000);
     } catch (err) {
       setError(err.message || "Đã xảy ra lỗi khi kết nối cơ sở dữ liệu");

@@ -245,10 +245,10 @@ export async function proxy(request) {
     }
   }
 
+  // Once setup is complete, redirect /setup to /dashboard (which checks auth or passes through)
   if (pathname === "/setup") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
-
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
     let requireLogin = true;
