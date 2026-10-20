@@ -55,6 +55,17 @@ async function trySqlJs() {
     return null;
   }
 }
+export function isCfD1Enabled() {
+  const flag = (process.env.CF_D1 || process.env.USE_CF_D1 || "").trim().toLowerCase();
+  return flag === "true" || flag === "1";
+}
+
+export function getCfD1Config() {
+  const accountId = (process.env.CF_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || "").trim();
+  const databaseId = (process.env.CF_DATABASE_ID || process.env.CF_D1_DATABASE_ID || process.env.CLOUDFLARE_DATABASE_ID || "").trim();
+  const apiToken = (process.env.CF_API_TOKEN || process.env.CF_D1_API_TOKEN || process.env.CLOUDFLARE_API_TOKEN || "").trim();
+  return { accountId, databaseId, apiToken };
+}
 
 // Supabase / any Postgres. Explicit opt-in via connection string — when set it
 // wins over the local SQLite file and there is NO silent fallback: a bad URL
@@ -64,8 +75,23 @@ export function getPostgresUrl() {
   const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || "";
   return url.trim() || null;
 }
-
 async function initAdapter() {
+  if (isCfD1Enabled()) {
+    const { accountId, databaseId, apiToken } = getCfD1Config();
+    if (!accountId || !databaseId || !apiToken) {
+      throw new Error("[DB] CF_D1 is enabled but CF_ACCOUNT_ID, CF_DATABASE_ID, or CF_API_TOKEN is missing");
+    }
+    const { createCloudflareD1Adapter } = await import("./adapters/cloudflareD1Adapter.js");
+    const adapter = createCloudflareD1Adapter({ accountId, databaseId, apiToken });
+    if (!state.logged) {
+      console.log(`[DB] Driver: ${adapter.driver} | database: ${databaseId.slice(0, 8)}...`);
+      state.logged = true;
+    }
+    const { runMigrationOnce } = await import("./migrate.js");
+    await runMigrationOnce(adapter);
+    return adapter;
+  }
+
   const pgUrl = getPostgresUrl();
   if (pgUrl) {
     const { createPostgresAdapter } = await import("./adapters/postgresAdapter.js");

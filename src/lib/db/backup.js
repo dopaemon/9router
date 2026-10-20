@@ -44,7 +44,7 @@ export function backupFile(srcPath, destDir, destName = null) {
 // its own backups (Supabase: PITR / daily snapshots). Returns null when
 // skipped so callers do not claim a backup they never took.
 export async function backupDbLite(adapter, destDir, destName = "data.sqlite") {
-  if (adapter.dialect !== "sqlite") {
+  if (adapter.dialect !== "sqlite" || adapter.driver === "cloudflare-d1") {
     console.log(`[DB] pre-schema backup skipped on ${adapter.driver} — use the server's own backups/PITR`);
     return null;
   }
