@@ -130,6 +130,14 @@ export async function PATCH(request) {
         })
         .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
     }
+    if (
+      Object.prototype.hasOwnProperty.call(body, "supabaseKeepAliveEnabled") ||
+      Object.prototype.hasOwnProperty.call(body, "supabaseKeepAliveIntervalMinutes")
+    ) {
+      import("@/shared/services/supabaseKeepAlive.js")
+        .then(({ startSupabaseKeepAlive }) => startSupabaseKeepAlive())
+        .catch((err) => console.warn("[SupabaseKeepAlive] reload failed:", err.message));
+    }
 
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);

@@ -118,6 +118,11 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  // Supabase KeepAlive background cron
+  import("@/shared/services/supabaseKeepAlive.js")
+    .then(({ startSupabaseKeepAlive }) => startSupabaseKeepAlive())
+    .catch((e) => console.log("[SupabaseKeepAlive] scheduler start failed:", e.message));
 }
 
 // Cheap local check: keeps the scheduler module (and its provider graph) unloaded

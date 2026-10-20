@@ -64,6 +64,11 @@ export const DEFAULT_SETTINGS = {
   pxpipeTimeoutMs: 15000,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
+  // Supabase KeepAlive background cron
+  supabaseKeepAliveEnabled: true,
+  supabaseKeepAliveIntervalMinutes: 60,
+  supabaseKeepAliveLastPingAt: null,
+  supabaseKeepAliveLastStatus: null,
 };
 
 async function readRaw() {

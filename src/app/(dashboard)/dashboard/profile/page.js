@@ -838,6 +838,77 @@ export default function ProfilePage() {
                 </span>
               )}
             </div>
+            {settings.dbDriver === "postgres" && (
+              <div className="flex flex-col gap-3 p-3 rounded-lg bg-bg border border-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-sm">Supabase KeepAlive Cron</p>
+                    <p className="text-xs text-text-muted">
+                      Tự động gửi truy vấn SQL thực tế để giữ Supabase luôn active, không bị pause sau 7 ngày
+                    </p>
+                  </div>
+                  <Toggle
+                    checked={settings.supabaseKeepAliveEnabled !== false}
+                    onChange={async () => {
+                      const nextVal = !(settings.supabaseKeepAliveEnabled !== false);
+                      setSettings((prev) => ({ ...prev, supabaseKeepAliveEnabled: nextVal }));
+                      await fetch("/api/settings", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ supabaseKeepAliveEnabled: nextVal }),
+                      });
+                    }}
+                  />
+                </div>
+                {settings.supabaseKeepAliveEnabled !== false && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-border/50 text-xs text-text-muted">
+                    <div className="flex items-center gap-2">
+                      <span>Chu kỳ ping:</span>
+                      <select
+                        value={settings.supabaseKeepAliveIntervalMinutes || 60}
+                        onChange={async (e) => {
+                          const minutes = Number(e.target.value);
+                          setSettings((prev) => ({ ...prev, supabaseKeepAliveIntervalMinutes: minutes }));
+                          await fetch("/api/settings", {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ supabaseKeepAliveIntervalMinutes: minutes }),
+                          });
+                        }}
+                        className="px-2 py-1 rounded border border-border bg-surface text-text-main text-xs"
+                      >
+                        <option value={15}>Mỗi 15 phút</option>
+                        <option value={30}>Mỗi 30 phút</option>
+                        <option value={60}>Mỗi 1 giờ (Khuyên dùng)</option>
+                        <option value={120}>Mỗi 2 giờ</option>
+                        <option value={360}>Mỗi 6 giờ</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {settings.supabaseKeepAliveLastPingAt && (
+                        <span>Ping gần nhất: {new Date(settings.supabaseKeepAliveLastPingAt).toLocaleTimeString()}</span>
+                      )}
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        icon="refresh"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch("/api/settings/database/keepalive", { method: "POST" });
+                            const d = await res.json();
+                            if (d.success) {
+                              setSettings((prev) => ({ ...prev, supabaseKeepAliveLastPingAt: d.pingedAt }));
+                            }
+                          } catch {}
+                        }}
+                      >
+                        Ping ngay
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 variant="secondary"
