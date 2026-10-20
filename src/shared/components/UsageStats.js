@@ -215,7 +215,7 @@ const PERIODS = [
   { value: "all", label: "All" },
 ];
 
-export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false } = {}) {
+export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false, liveMode: liveModeProp, setLiveMode: setLiveModeProp, liveInterval = 1000 } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -230,7 +230,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
-  const [liveMode, setLiveMode] = useState(false);
+  const [liveModeLocal, setLiveModeLocal] = useState(false);
+  const liveMode = liveModeProp !== undefined ? liveModeProp : liveModeLocal;
+  const setLiveMode = setLiveModeProp || setLiveModeLocal;
   const liveIntervalRef = useRef(null);
   const liveAbortRef = useRef(null);
   const hasLoadedStats = useRef(false);
@@ -312,7 +314,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   // climb while requests are in flight.
   useEffect(() => {
     if (!liveMode) return undefined;
-    const LIVE_INTERVAL_MS = 2500;
+    const intervalMs = Math.max(500, Number(liveInterval) || 1000);
     let cancelled = false;
 
     const pull = async () => {
@@ -330,7 +332,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     };
 
     pull();
-    liveIntervalRef.current = setInterval(pull, LIVE_INTERVAL_MS);
+    liveIntervalRef.current = setInterval(pull, intervalMs);
 
     const onVisibility = () => {
       if (!document.hidden) pull();
@@ -343,7 +345,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       liveAbortRef.current?.abort();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [liveMode, period]);
+  }, [liveMode, period, liveInterval]);
 
 
   // SSE connection - instant real-time push for the selected period
@@ -525,27 +527,28 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           )}
         </div>
       )}
-      {/* Live mode toggle */}
-      <div className="flex w-full items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => setLiveMode((v) => !v)}
-          aria-pressed={liveMode}
-          title={liveMode ? "Live mode on — counters refresh every 2.5s" : "Enable live mode — counters refresh every 2.5s"}
-          className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
-            liveMode
-              ? "border-success/40 bg-success/10 text-success"
-              : "border-border text-text-muted hover:bg-bg-hover hover:text-text"
-          }`}
-        >
-          <span className={`material-symbols-outlined text-[16px] ${liveMode ? "animate-pulse" : ""}`}>
-            {liveMode ? "sensors" : "sensors_off"}
-          </span>
-          Live
-          {liveMode && <span className="text-[10px] tabular-nums opacity-70">2.5s</span>}
-        </button>
-      </div>
-
+      {/* Live mode toggle (fallback if not controlled by parent) */}
+      {!hidePeriodSelector && liveModeProp === undefined && (
+        <div className="flex w-full items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setLiveMode((v) => !v)}
+            aria-pressed={liveMode}
+            title={liveMode ? "Live mode on — counters refresh every 1s" : "Enable live mode — counters refresh every 1s"}
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
+              liveMode
+                ? "border-success/40 bg-success/10 text-success"
+                : "border-border text-text-muted hover:bg-bg-hover hover:text-text"
+            }`}
+          >
+            <span className={`material-symbols-outlined text-[16px] ${liveMode ? "animate-pulse" : ""}`}>
+              {liveMode ? "sensors" : "sensors_off"}
+            </span>
+            Live
+            {liveMode && <span className="text-[10px] tabular-nums opacity-70">1s</span>}
+          </button>
+        </div>
+      )}
 
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
