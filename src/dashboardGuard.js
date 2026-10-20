@@ -246,7 +246,7 @@ export async function proxy(request) {
   }
 
   if (pathname === "/setup") {
-    return NextResponse.next();
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   // Protect all dashboard routes

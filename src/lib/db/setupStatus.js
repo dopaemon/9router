@@ -49,38 +49,63 @@ export function upsertEnvVar(content, key, value) {
 }
 
 export function saveEnvConfig(cfg) {
-  try {
-    const envPath = path.join(process.cwd(), ".env");
-    let content = "";
-    if (fs.existsSync(envPath)) {
-      content = fs.readFileSync(envPath, "utf-8");
-    } else {
-      const examplePath = path.join(process.cwd(), ".env.example");
-      if (fs.existsSync(examplePath)) {
-        content = fs.readFileSync(examplePath, "utf-8");
-      }
-    }
-
-    if (cfg.driver === "cloudflare-d1") {
-      content = upsertEnvVar(content, "CF_D1", "true");
-      content = upsertEnvVar(content, "CF_ACCOUNT_ID", cfg.d1?.accountId || "");
-      content = upsertEnvVar(content, "CF_DATABASE_ID", cfg.d1?.databaseId || "");
-      content = upsertEnvVar(content, "CF_API_TOKEN", cfg.d1?.apiToken || "");
-    } else if (cfg.driver === "postgres") {
-      content = upsertEnvVar(content, "CF_D1", "false");
-      content = upsertEnvVar(content, "SUPABASE_DB_URL", cfg.postgres?.url || "");
-      content = upsertEnvVar(content, "PGSSL_NO_VERIFY", "1");
-    } else {
-      content = upsertEnvVar(content, "CF_D1", "false");
-    }
-
-    content = upsertEnvVar(content, "SETUP_COMPLETED", "true");
-    fs.writeFileSync(envPath, content, "utf-8");
-    return true;
-  } catch (e) {
-    console.warn("[DB][setup] Could not update .env file:", e.message);
-    return false;
+  // 1. Immediately apply to running process.env so subsequent requests recognize completion
+  if (cfg.driver === "cloudflare-d1") {
+    process.env.CF_D1 = "true";
+    if (cfg.d1?.accountId) process.env.CF_ACCOUNT_ID = cfg.d1.accountId;
+    if (cfg.d1?.databaseId) process.env.CF_DATABASE_ID = cfg.d1.databaseId;
+    if (cfg.d1?.apiToken) process.env.CF_API_TOKEN = cfg.d1.apiToken;
+  } else if (cfg.driver === "postgres") {
+    process.env.CF_D1 = "false";
+    if (cfg.postgres?.url) process.env.SUPABASE_DB_URL = cfg.postgres.url;
+    process.env.PGSSL_NO_VERIFY = "1";
+  } else {
+    process.env.CF_D1 = "false";
   }
+  process.env.SETUP_COMPLETED = "true";
+
+  // 2. Persist to candidate .env locations:
+  //    - ~/.9router/.env (always preserved by CLI across installs/updates)
+  //    - process.cwd()/.env (local dev root)
+  const targetPaths = [
+    path.join(currentDataDir(), ".env"),
+    path.join(process.cwd(), ".env"),
+  ];
+
+  for (const envPath of targetPaths) {
+    try {
+      let content = "";
+      if (fs.existsSync(envPath)) {
+        content = fs.readFileSync(envPath, "utf-8");
+      } else {
+        const examplePath = path.join(process.cwd(), ".env.example");
+        if (fs.existsSync(examplePath)) {
+          content = fs.readFileSync(examplePath, "utf-8");
+        }
+      }
+
+      if (cfg.driver === "cloudflare-d1") {
+        content = upsertEnvVar(content, "CF_D1", "true");
+        content = upsertEnvVar(content, "CF_ACCOUNT_ID", cfg.d1?.accountId || "");
+        content = upsertEnvVar(content, "CF_DATABASE_ID", cfg.d1?.databaseId || "");
+        content = upsertEnvVar(content, "CF_API_TOKEN", cfg.d1?.apiToken || "");
+      } else if (cfg.driver === "postgres") {
+        content = upsertEnvVar(content, "CF_D1", "false");
+        content = upsertEnvVar(content, "SUPABASE_DB_URL", cfg.postgres?.url || "");
+        content = upsertEnvVar(content, "PGSSL_NO_VERIFY", "1");
+      } else {
+        content = upsertEnvVar(content, "CF_D1", "false");
+      }
+
+      content = upsertEnvVar(content, "SETUP_COMPLETED", "true");
+      const parentDir = path.dirname(envPath);
+      if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true });
+      fs.writeFileSync(envPath, content, "utf-8");
+    } catch (e) {
+      console.warn(`[DB][setup] Could not update ${envPath}:`, e.message);
+    }
+  }
+  return true;
 }
 
 export function isSetupComplete() {
