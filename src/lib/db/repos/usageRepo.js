@@ -805,6 +805,7 @@ export async function getChartData(period = "7d") {
       rtkTokensSaved: dayData ? (dayData.rtkTokensSaved || 0) : 0,
     };
   });
+}
 
 function formatLogDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
