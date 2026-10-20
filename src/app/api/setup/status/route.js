@@ -15,7 +15,6 @@ export async function GET() {
     } else if (pgUrlEnv || fileConfig?.driver === "postgres") {
       currentDriver = "postgres";
     }
-
     return NextResponse.json({
       setupNeeded: !setupCompleted,
       setupCompleted,

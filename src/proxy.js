@@ -12,7 +12,6 @@ import {
 
 export default async function proxy(request) {
   // Xiaomi account session-login proxy (src/lib/mimoLoginSession.js).
-  // Session state (region + accumulated cookie jar) travels in the httpOnly
   // 9r_mimo_login cookie — route handlers and this proxy run in separate
   // bundles, so module-level maps are NOT shared. The cookie is only set by
   // the auth-gated login/start route, and the branch below ALSO requires a
