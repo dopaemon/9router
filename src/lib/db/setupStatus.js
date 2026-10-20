@@ -41,6 +41,41 @@ export function writeDbConfig(cfg) {
   }
 }
 
+export function clearDbSetupConfig() {
+  try {
+    const cfgPath = currentConfigFile();
+    if (fs.existsSync(cfgPath)) fs.unlinkSync(cfgPath);
+  } catch (e) {
+    console.warn("[DB][setup] Failed to remove db-config.json:", e.message);
+  }
+
+  delete process.env.CF_D1;
+  delete process.env.USE_CF_D1;
+  delete process.env.CF_ACCOUNT_ID;
+  delete process.env.CF_DATABASE_ID;
+  delete process.env.CF_API_TOKEN;
+  delete process.env.SUPABASE_DB_URL;
+  delete process.env.DATABASE_URL;
+  delete process.env.SETUP_COMPLETED;
+
+  const targetPaths = [
+    path.join(currentDataDir(), ".env"),
+    path.join(process.cwd(), ".env"),
+  ];
+
+  for (const envPath of targetPaths) {
+    try {
+      if (!fs.existsSync(envPath)) continue;
+      let content = fs.readFileSync(envPath, "utf-8");
+      content = upsertEnvVar(content, "CF_D1", "false");
+      content = upsertEnvVar(content, "SETUP_COMPLETED", "false");
+      const reSupabase = /^#?\s*SUPABASE_DB_URL=.*$/m;
+      if (reSupabase.test(content)) content = content.replace(reSupabase, "# SUPABASE_DB_URL=");
+      fs.writeFileSync(envPath, content, "utf-8");
+    } catch {}
+  }
+}
+
 export function upsertEnvVar(content, key, value) {
   const re = new RegExp(`^#?\\s*${key}=.*$`, "m");
   const line = `${key}=${value}`;

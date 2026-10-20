@@ -56,16 +56,16 @@ export async function DELETE(request) {
     if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
-    await resetDb(true);
+    await resetDb(false);
 
-    try {
-      const settings = await getSettings();
-      applyOutboundProxyEnv(settings);
-    } catch (err) {
-      console.warn("[Settings][DatabaseReset] Failed to re-apply outbound proxy env:", err);
-    }
+    // Clear persisted setup configuration so system prompts for setup again
+    const { clearDbSetupConfig } = await import("@/lib/db/setupStatus.js");
+    clearDbSetupConfig();
 
-    return NextResponse.json({ success: true });
+    const { resetAdapter } = await import("@/lib/db/driver.js");
+    await resetAdapter();
+
+    return NextResponse.json({ success: true, redirect: "/setup" });
   } catch (error) {
     console.error("Error resetting database:", error);
     return NextResponse.json(

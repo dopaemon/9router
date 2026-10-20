@@ -746,8 +746,10 @@ export default function ProfilePage() {
         throw new Error(data.error || "Failed to reset database");
       }
 
-      await reloadSettings();
-      setDbStatus({ type: "success", message: "Database reset successfully. All data wiped clean." });
+      setDbStatus({ type: "success", message: "Database reset successfully. Redirecting to setup..." });
+      setTimeout(() => {
+        window.location.assign("/setup");
+      }, 1000);
     } catch (err) {
       setDbStatus({ type: "error", message: err.message || "Failed to reset database" });
     } finally {
