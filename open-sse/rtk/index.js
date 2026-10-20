@@ -145,6 +145,27 @@ function compressText(text, stats, shape) {
   return out;
 }
 
+export function getRtkSummary(stats) {
+  if (!stats || !stats.hits || stats.hits.length === 0) return null;
+  const bytesSaved = Math.max(0, stats.bytesBefore - stats.bytesAfter);
+  if (bytesSaved <= 0) return null;
+  const tokensSavedEst = Math.max(0, Math.round(bytesSaved / 4));
+  const savedPct = stats.bytesBefore > 0
+    ? +((bytesSaved / stats.bytesBefore) * 100).toFixed(1)
+    : 0;
+  const filters = Array.from(new Set(stats.hits.map((h) => h.filter)));
+  return {
+    applied: true,
+    bytesBefore: stats.bytesBefore,
+    bytesAfter: stats.bytesAfter,
+    bytesSaved,
+    tokensSavedEst,
+    savedPct,
+    hits: stats.hits.length,
+    filters,
+  };
+}
+
 // Convenience: format a log line from stats
 export function formatRtkLog(stats) {
   if (!stats || !stats.hits || stats.hits.length === 0) return null;

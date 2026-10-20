@@ -464,6 +464,40 @@ export default function RequestDetailsTab() {
                 )}
               </div>
             )}
+            {selectedDetail.rtk?.applied && (
+              <div className="rounded-lg border border-black/5 dark:border-white/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[18px] text-text-muted">bolt</span>
+                  <span className="font-semibold text-sm text-text-main">RTK Token Saver</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-green-500/15 text-green-600 font-medium">
+                    Compressed
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                  <div>
+                    <span className="text-text-muted block text-xs">Original Size</span>
+                    <span className="font-mono">{(selectedDetail.rtk.bytesBefore || 0).toLocaleString()} B</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block text-xs">Compressed Size</span>
+                    <span className="font-mono">{(selectedDetail.rtk.bytesAfter || 0).toLocaleString()} B</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block text-xs">Saved (est.)</span>
+                    <span className="font-mono text-green-600 font-semibold">
+                      ~{(selectedDetail.rtk.tokensSavedEst || 0).toLocaleString()} tokens (-{selectedDetail.rtk.savedPct || 0}%)
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block text-xs">Filters Applied</span>
+                    <span className="font-mono text-xs truncate block" title={(selectedDetail.rtk.filters || []).join(", ")}>
+                      {(selectedDetail.rtk.filters || []).join(", ") || "none"} ({selectedDetail.rtk.hits || 0} hits)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
 
             <div className="space-y-4">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">

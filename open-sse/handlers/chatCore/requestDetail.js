@@ -92,13 +92,14 @@ export function buildRequestDetail(base, overrides = {}) {
     providerResponse: base.providerResponse || null,
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
+    rtk: base.rtk || undefined,
     status: base.status || "success",
     ...overrides
   };
 }
 
 // Build the "done" summary: duration, ttft, in/out tokens with cache breakdown
-export function formatDoneLine({ usage, latency }) {
+export function formatDoneLine({ usage, latency, rtk }) {
   const u = usage || {};
   const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
   const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
@@ -115,10 +116,11 @@ export function formatDoneLine({ usage, latency }) {
   // Same marker as logUsage(): a count we guessed must not read like a
   // measured one.
   const estimatedStr = u.estimated ? " (estimated)" : "";
-  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}${estimatedStr}`;
+  const rtkStr = rtk?.tokensSavedEst > 0 ? ` · RTK -${rtk.tokensSavedEst}tok (-${rtk.savedPct}%)` : "";
+  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}${estimatedStr}${rtkStr}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false, rtk = null }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -146,6 +148,7 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
+    rtk: rtk || undefined,
   }).catch(() => {});
 }

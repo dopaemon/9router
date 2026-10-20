@@ -53,12 +53,14 @@ function getLocalDateKey(timestamp) {
 }
 
 function addToCounter(target, key, values) {
-  if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
+  if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rtkTokensSaved: 0, rtkBytesSaved: 0 };
   target[key].requests += values.requests || 1;
   target[key].promptTokens += values.promptTokens || 0;
   target[key].completionTokens += values.completionTokens || 0;
   target[key].cachedTokens += values.cachedTokens || 0;
   target[key].cost += values.cost || 0;
+  target[key].rtkTokensSaved += values.rtkTokensSaved || 0;
+  target[key].rtkBytesSaved += values.rtkBytesSaved || 0;
   if (values.meta) Object.assign(target[key], values.meta);
 }
 
@@ -67,14 +69,17 @@ function aggregateEntryToDay(day, entry) {
   const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
   const cachedTokens = entry.tokens?.cached_tokens || entry.tokens?.cache_read_input_tokens || 0;
   const cost = entry.cost || 0;
-  const vals = { promptTokens, completionTokens, cachedTokens, cost };
+  const rtkTokensSaved = entry.rtk?.tokensSavedEst || entry.meta?.rtk?.tokensSavedEst || 0;
+  const rtkBytesSaved = entry.rtk?.bytesSaved || entry.meta?.rtk?.bytesSaved || 0;
+  const vals = { promptTokens, completionTokens, cachedTokens, cost, rtkTokensSaved, rtkBytesSaved };
 
   day.requests = (day.requests || 0) + 1;
   day.promptTokens = (day.promptTokens || 0) + promptTokens;
   day.completionTokens = (day.completionTokens || 0) + completionTokens;
   day.cachedTokens = (day.cachedTokens || 0) + cachedTokens;
   day.cost = (day.cost || 0) + cost;
-
+  day.rtkTokensSaved = (day.rtkTokensSaved || 0) + rtkTokensSaved;
+  day.rtkBytesSaved = (day.rtkBytesSaved || 0) + rtkBytesSaved;
   day.byProvider ||= {};
   day.byModel ||= {};
   day.byAccount ||= {};
@@ -124,12 +129,16 @@ async function ensureRingInitialized() {
   recentRing.initialized = true;
   try {
     const db = await getAdapter();
-    const rows = await db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
-    recentRing.items = rows.reverse().map((r) => ({
-      timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
-      apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
-      tokens: parseJson(r.tokens, {}),
-    }));
+    const rows = await db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens, meta FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
+    recentRing.items = rows.reverse().map((r) => {
+      const meta = parseJson(r.meta, {}) || {};
+      return {
+        timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
+        apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
+        tokens: parseJson(r.tokens, {}),
+        rtk: meta.rtk || null,
+      };
+    });
   } catch {}
 }
 
@@ -224,6 +233,7 @@ export async function getActiveRequests() {
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
         status: e.status || "ok",
+        rtk: e.rtk || e.meta?.rtk || null,
       };
     })
     .filter((e) => {
@@ -286,7 +296,8 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
+          stringifyJson(tokens), stringifyJson(entry.meta || (entry.rtk ? { rtk: entry.rtk } : {})),
         ]
       );
 
@@ -373,17 +384,19 @@ export async function getUsageStats(period = "all") {
   }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = await db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = await db.all(`SELECT timestamp, provider, model, tokens, status, meta FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
   const recentRequests = recentRows
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
+      const m = parseJson(r.meta, {}) || {};
       return {
         timestamp: r.timestamp, model: r.model, provider: r.provider || "",
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
         cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
         status: r.status || "ok",
+        rtk: m.rtk || null,
       };
     })
     .filter((e) => {
@@ -399,6 +412,7 @@ export async function getUsageStats(period = "all") {
   const stats = {
     totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
+    totalRtkTokensSaved: 0, totalRtkBytesSaved: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
@@ -461,14 +475,18 @@ export async function getUsageStats(period = "all") {
       stats.totalCompletionTokens += day.completionTokens || 0;
       stats.totalCachedTokens += day.cachedTokens || 0;
       stats.totalCost += day.cost || 0;
+      stats.totalRtkTokensSaved += day.rtkTokensSaved || 0;
+      stats.totalRtkBytesSaved += day.rtkBytesSaved || 0;
 
       for (const [prov, p] of Object.entries(day.byProvider || {})) {
-        if (!stats.byProvider[prov]) stats.byProvider[prov] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
+        if (!stats.byProvider[prov]) stats.byProvider[prov] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rtkTokensSaved: 0, rtkBytesSaved: 0 };
         stats.byProvider[prov].requests += p.requests || 0;
         stats.byProvider[prov].promptTokens += p.promptTokens || 0;
         stats.byProvider[prov].completionTokens += p.completionTokens || 0;
         stats.byProvider[prov].cachedTokens += p.cachedTokens || 0;
         stats.byProvider[prov].cost += p.cost || 0;
+        stats.byProvider[prov].rtkTokensSaved += p.rtkTokensSaved || 0;
+        stats.byProvider[prov].rtkBytesSaved += p.rtkBytesSaved || 0;
       }
 
       for (const [mk, m] of Object.entries(day.byModel || {})) {
@@ -585,12 +603,17 @@ export async function getUsageStats(period = "all") {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
     const filtered = await db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens, meta FROM usageHistory WHERE timestamp >= ?`,
       [cutoff]
     );
 
     for (const r of filtered) {
       const tokens = parseJson(r.tokens, {}) || {};
+      const meta = parseJson(r.meta, {}) || {};
+      const rtk = meta.rtk || {};
+      const rtkTokensSaved = rtk.tokensSavedEst || 0;
+      const rtkBytesSaved = rtk.bytesSaved || 0;
+
       const promptTokens = tokens.prompt_tokens || tokens.input_tokens || r.promptTokens || 0;
       const completionTokens = tokens.completion_tokens || tokens.output_tokens || r.completionTokens || 0;
       const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
@@ -601,13 +624,17 @@ export async function getUsageStats(period = "all") {
       stats.totalCompletionTokens += completionTokens;
       stats.totalCachedTokens += cachedTokens;
       stats.totalCost += entryCost;
+      stats.totalRtkTokensSaved += rtkTokensSaved;
+      stats.totalRtkBytesSaved += rtkBytesSaved;
 
-      if (!stats.byProvider[r.provider]) stats.byProvider[r.provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
+      if (!stats.byProvider[r.provider]) stats.byProvider[r.provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rtkTokensSaved: 0, rtkBytesSaved: 0 };
       stats.byProvider[r.provider].requests++;
       stats.byProvider[r.provider].promptTokens += promptTokens;
       stats.byProvider[r.provider].completionTokens += completionTokens;
       stats.byProvider[r.provider].cachedTokens += cachedTokens;
       stats.byProvider[r.provider].cost += entryCost;
+      stats.byProvider[r.provider].rtkTokensSaved += rtkTokensSaved;
+      stats.byProvider[r.provider].rtkBytesSaved += rtkBytesSaved;
 
       const modelKey = r.provider ? `${r.model} (${r.provider})` : r.model;
       if (!stats.byModel[modelKey]) {
@@ -684,10 +711,10 @@ export async function getChartData(period = "7d") {
     const startTime = startOfDay.getTime();
     const endTime = startTime + bucketCount * bucketMs;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0, rtkTokensSaved: 0 }));
 
     const rows = await db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost, meta FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -698,6 +725,8 @@ export async function getChartData(period = "7d") {
         buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
         buckets[idx].cost += r.cost || 0;
         buckets[idx].requests += 1;
+        const meta = parseJson(r.meta, {}) || {};
+        buckets[idx].rtkTokensSaved += meta.rtk?.tokensSavedEst || 0;
       }
     }
     return buckets;
@@ -708,10 +737,10 @@ export async function getChartData(period = "7d") {
     const bucketMs = 3600000;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0, rtkTokensSaved: 0 }));
 
     const rows = await db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost, meta FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -721,6 +750,8 @@ export async function getChartData(period = "7d") {
       buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
       buckets[idx].cost += r.cost || 0;
       buckets[idx].requests += 1;
+      const meta = parseJson(r.meta, {}) || {};
+      buckets[idx].rtkTokensSaved += meta.rtk?.tokensSavedEst || 0;
     }
     return buckets;
   }
@@ -748,6 +779,7 @@ export async function getChartData(period = "7d") {
         tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
         cost: dayData ? (dayData.cost || 0) : 0,
         requests: dayData ? (dayData.requests || 0) : 0,
+        rtkTokensSaved: dayData ? (dayData.rtkTokensSaved || 0) : 0,
       };
     });
   }
@@ -770,9 +802,9 @@ export async function getChartData(period = "7d") {
       tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
       cost: dayData ? (dayData.cost || 0) : 0,
       requests: dayData ? (dayData.requests || 0) : 0,
+      rtkTokensSaved: dayData ? (dayData.rtkTokensSaved || 0) : 0,
     };
   });
-}
 
 function formatLogDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");

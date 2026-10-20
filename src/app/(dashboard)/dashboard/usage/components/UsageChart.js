@@ -24,12 +24,14 @@ const fmtRequests = (n) => String(n || 0);
 
 const VIEW_MODES = [
   { value: "tokens", label: "Tokens" },
+  { value: "rtkGain", label: "RTK Gain" },
   { value: "requests", label: "Requests" },
   { value: "cost", label: "Cost" },
 ];
 
 const VIEW_CONFIG = {
   tokens:   { dataKey: "tokens",   color: "#6366f1", gradId: "gradTokens",   formatter: fmtTokens,   label: "Tokens" },
+  rtkGain:  { dataKey: "rtkTokensSaved", color: "#10b981", gradId: "gradRtkGain", formatter: fmtTokens, label: "Tokens Saved" },
   requests: { dataKey: "requests", color: "#14b8a6", gradId: "gradRequests", formatter: fmtRequests, label: "Requests" },
   cost:     { dataKey: "cost",     color: "#f59e0b", gradId: "gradCost",     formatter: fmtCost,     label: "Cost" },
 };
@@ -98,6 +100,10 @@ export default function UsageChart({ period = "7d" }) {
               <linearGradient id="gradTokens" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
                 <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="gradRtkGain" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gradRequests" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.25} />
