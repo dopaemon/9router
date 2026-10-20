@@ -17,10 +17,19 @@ export async function createPostgresAdapter(connectionString) {
   // trusted certs. PGSSL_NO_VERIFY=1 is the escape hatch for self-hosted
   // Postgres behind a private CA; it disables MITM protection, so only set it
   // on a trusted network.
-  const ssl = /\bsslmode=disable\b/.test(connectionString)
-    ? false
-    : { rejectUnauthorized: process.env.PGSSL_NO_VERIFY !== "1" };
+  // Supabase pooler/direct connection or self-hosted Postgres SSL config:
+  // If connection string has sslmode=disable, SSL is disabled.
+  // If connection string has sslmode=no-verify or PGSSL_NO_VERIFY=1 or is a supabase.co host,
+  // allow self-signed / pooler CA certificates (prevents 'self-signed certificate in certificate chain').
+  const isSupabaseHost = /\.supabase\.(co|com)\b/i.test(connectionString);
+  const allowNoVerify =
+    process.env.PGSSL_NO_VERIFY === "1" ||
+    /\bsslmode=no-verify\b/i.test(connectionString) ||
+    isSupabaseHost;
 
+  const ssl = /\bsslmode=disable\b/i.test(connectionString)
+    ? false
+    : { rejectUnauthorized: !allowNoVerify };
   async function resolvePoolWithFallback() {
     const p = new Pool({
       connectionString,

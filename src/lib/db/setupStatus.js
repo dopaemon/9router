@@ -69,6 +69,7 @@ export function saveEnvConfig(cfg) {
     } else if (cfg.driver === "postgres") {
       content = upsertEnvVar(content, "CF_D1", "false");
       content = upsertEnvVar(content, "SUPABASE_DB_URL", cfg.postgres?.url || "");
+      content = upsertEnvVar(content, "PGSSL_NO_VERIFY", "1");
     } else {
       content = upsertEnvVar(content, "CF_D1", "false");
     }
