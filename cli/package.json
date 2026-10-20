@@ -1,6 +1,6 @@
 {
   "name": "@dopaemon/9router",
-  "version": "0.5.128",
+  "version": "0.5.129",
   "publishConfig": {
     "access": "public"
   },
