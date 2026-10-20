@@ -230,6 +230,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
+  const [liveMode, setLiveMode] = useState(false);
+  const liveIntervalRef = useRef(null);
+  const liveAbortRef = useRef(null);
   const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
@@ -305,6 +308,43 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
     return () => clearInterval(interval);
   }, [fetchStats]);
+  // Live mode: poll the stats endpoint on a short interval so the counters
+  // climb while requests are in flight.
+  useEffect(() => {
+    if (!liveMode) return undefined;
+    const LIVE_INTERVAL_MS = 2500;
+    let cancelled = false;
+
+    const pull = async () => {
+      if (cancelled || (typeof document !== "undefined" && document.hidden)) return;
+      const controller = new AbortController();
+      liveAbortRef.current = controller;
+      try {
+        const res = await fetch(`/api/usage/stats?period=${period}`, { signal: controller.signal, cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data) setStats((prev) => ({ ...prev, ...data }));
+      } catch {
+        // aborted or transient
+      }
+    };
+
+    pull();
+    liveIntervalRef.current = setInterval(pull, LIVE_INTERVAL_MS);
+
+    const onVisibility = () => {
+      if (!document.hidden) pull();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      cancelled = true;
+      clearInterval(liveIntervalRef.current);
+      liveAbortRef.current?.abort();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [liveMode, period]);
+
 
   // SSE connection - instant real-time push for the selected period
   useEffect(() => {
@@ -485,6 +525,27 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           )}
         </div>
       )}
+      {/* Live mode toggle */}
+      <div className="flex w-full items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setLiveMode((v) => !v)}
+          aria-pressed={liveMode}
+          title={liveMode ? "Live mode on — counters refresh every 2.5s" : "Enable live mode — counters refresh every 2.5s"}
+          className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
+            liveMode
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-border text-text-muted hover:bg-bg-hover hover:text-text"
+          }`}
+        >
+          <span className={`material-symbols-outlined text-[16px] ${liveMode ? "animate-pulse" : ""}`}>
+            {liveMode ? "sensors" : "sensors_off"}
+          </span>
+          Live
+          {liveMode && <span className="text-[10px] tabular-nums opacity-70">2.5s</span>}
+        </button>
+      </div>
+
 
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}

@@ -12,6 +12,22 @@ export function getQuotaCooldown(backoffLevel = 0) {
   return Math.min(cooldown, BACKOFF_CONFIG.max);
 }
 
+
+/**
+ * Client-error statuses that are NOT request-scoped, i.e. that must fall back
+ * instead of being handed straight back to the caller.
+ *
+ *  - 401/402/403/429 are account/quota scoped and have their own rules in
+ *    ERROR_RULES (checked before the unmatched-4xx catch-all).
+ *  - 408 Request Timeout, 425 Too Early and 499 Client Closed Request are
+ *    emitted by load balancers and edge proxies (ALB, Cloudflare, HAProxy,
+ *    nginx) when an upstream node stalls or resets. The payload is fine — the
+ *    node is not — so they are transient transport failures, not client
+ *    mistakes. Falling back to the next account / combo member is the only way
+ *    to keep serving; aborting here makes a fallback combo ignore its backup
+ *    members. (#4911)
+ */
+const FALLBACK_ELIGIBLE_CLIENT_STATUSES = new Set([401, 402, 403, 429, 408, 425, 499]);
 /**
  * Check if error should trigger account fallback (switch to next account)
  * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
@@ -54,9 +70,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   // ("all 1 accounts locked for <model> | lastError=[400]: ..."), which hides the
   // real cause from the caller and makes unrelated sessions look like they hit the
   // same limit. Hand the upstream error back for this request instead.
-  // Account-scoped statuses keep their rules above (401/402/403/404/429), and the
-  // text rules still win for rate-limit / quota / capacity wording.
-  if (status >= 400 && status < 500 && status !== 401 && status !== 402 && status !== 403 && status !== 429) {
+  // Account-scoped statuses keep their rules above (401/402/403/404/429), the
+  // text rules still win for rate-limit / quota / capacity wording, and the
+  // transient gateway statuses (408/425/499) fall through to the transient
+  // default below instead of aborting the chain. (#4911)
+  if (status >= 400 && status < 500 && !FALLBACK_ELIGIBLE_CLIENT_STATUSES.has(status)) {
     return { shouldFallback: false, cooldownMs: 0 };
   }
 
