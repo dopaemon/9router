@@ -15,24 +15,11 @@ async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
-    const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
-    if (envRequestLogs !== undefined) {
-      const enabled = envRequestLogs.toLowerCase() === "true";
-      cachedConfig = {
-        enabled,
-        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-      };
-      cachedConfigTs = Date.now();
-      return cachedConfig;
-    }
-    const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
-    const uiFlag = typeof settings.enableObservability === "boolean";
-    const enabled = uiFlag
-      ? settings.enableObservability
-      : envFallback;
+    const uiFlag = typeof settings.enableObservability === "boolean" ? settings.enableObservability : null;
+    const envObs = process.env.OBSERVABILITY_ENABLED !== undefined
+      ? process.env.OBSERVABILITY_ENABLED.toLowerCase() !== "false"
+      : null;
+    const enabled = uiFlag !== null ? uiFlag : (envObs !== null ? envObs : true);
 
     cachedConfig = {
       enabled,
@@ -174,7 +161,7 @@ export async function getRequestDetails(filter = {}) {
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const cntRow = await db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
-  const totalItems = cntRow ? cntRow.c : 0;
+  const totalItems = cntRow ? parseInt(cntRow.c, 10) || 0 : 0;
 
   const page = filter.page || 1;
   const pageSize = filter.pageSize || 50;
