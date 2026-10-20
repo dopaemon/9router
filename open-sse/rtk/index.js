@@ -14,6 +14,14 @@ export function compressMessages(body, enabled) {
     return compressKiroFormat(body, enabled);
   }
 
+  // Gemini / Antigravity format: contents or request.contents
+  const geminiContents = Array.isArray(body.contents) ? body.contents
+    : Array.isArray(body.request?.contents) ? body.request.contents
+    : null;
+  if (geminiContents) {
+    return compressGeminiFormat(geminiContents, enabled);
+  }
+
   // Support both OpenAI/Claude "messages" and OpenAI Responses "input"
   const items = Array.isArray(body.messages) ? body.messages
     : Array.isArray(body.input) ? body.input
@@ -112,6 +120,33 @@ function compressKiroFormat(body, enabled) {
     }
   } catch (e) {
     console.warn("[RTK] compressKiroFormat error:", e.message);
+    return null;
+  }
+  return stats;
+}
+
+// Compress Gemini / Antigravity format: contents[].parts[].functionResponse.response
+function compressGeminiFormat(contents, enabled) {
+  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
+  try {
+    for (const turn of contents) {
+      if (!Array.isArray(turn?.parts)) continue;
+      for (const part of turn.parts) {
+        if (!part?.functionResponse?.response) continue;
+        const resp = part.functionResponse.response;
+        if (typeof resp === "string") {
+          part.functionResponse.response = compressText(resp, stats, "gemini-function-response");
+        } else if (resp && typeof resp.result === "string") {
+          resp.result = compressText(resp.result, stats, "gemini-function-response-result");
+        } else if (resp && typeof resp.output === "string") {
+          resp.output = compressText(resp.output, stats, "gemini-function-response-output");
+        } else if (resp && typeof resp.content === "string") {
+          resp.content = compressText(resp.content, stats, "gemini-function-response-content");
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[RTK] compressGeminiFormat error:", e.message);
     return null;
   }
   return stats;
