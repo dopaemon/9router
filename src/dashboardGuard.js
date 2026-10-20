@@ -3,6 +3,7 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { isSetupComplete } from "@/lib/db/setupStatus.js";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -31,8 +32,8 @@ const PUBLIC_API_PATHS = [
   "/api/auth/saml",
   "/api/version",
   "/api/settings/require-login",
+  "/api/setup",
 ];
-
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 // Keep root-level rewrites here too: middleware runs before Next.js rewrites.
 const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses"];
@@ -234,11 +235,24 @@ export async function proxy(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Setup flow for first-time installation without env
+  if (!isSetupComplete()) {
+    if (pathname === "/setup" || pathname.startsWith("/api/setup")) {
+      return NextResponse.next();
+    }
+    if (pathname === "/" || pathname.startsWith("/dashboard") || pathname === "/login") {
+      return NextResponse.redirect(new URL("/setup", request.url));
+    }
+  }
+
+  if (pathname === "/setup") {
+    return NextResponse.next();
+  }
+
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
     let requireLogin = true;
     let tunnelDashboardAccess = true;
-
     try {
       const settings = await loadSettings();
       if (settings) {

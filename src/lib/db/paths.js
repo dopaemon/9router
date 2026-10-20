@@ -5,6 +5,7 @@ import { DATA_DIR } from "../dataDir.js";
 export const DB_DIR = path.join(DATA_DIR, "db");
 export const DATA_FILE = path.join(DB_DIR, "data.sqlite");
 export const BACKUPS_DIR = path.join(DB_DIR, "backups");
+export const DB_CONFIG_FILE = path.join(DATA_DIR, "db-config.json");
 export const LEGACY_FILES = {
   main: path.join(DATA_DIR, "db.json"),
   usage: path.join(DATA_DIR, "usage.json"),

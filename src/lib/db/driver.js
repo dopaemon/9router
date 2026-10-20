@@ -76,6 +76,9 @@ export function getPostgresUrl() {
   return url.trim() || null;
 }
 async function initAdapter() {
+  const { readDbConfig } = await import("./setupStatus.js");
+  const fileConfig = readDbConfig();
+
   if (isCfD1Enabled()) {
     const { accountId, databaseId, apiToken } = getCfD1Config();
     if (!accountId || !databaseId || !apiToken) {
@@ -92,7 +95,22 @@ async function initAdapter() {
     return adapter;
   }
 
-  const pgUrl = getPostgresUrl();
+  if (fileConfig?.driver === "cloudflare-d1" && fileConfig.d1) {
+    const { accountId, databaseId, apiToken } = fileConfig.d1;
+    if (accountId && databaseId && apiToken) {
+      const { createCloudflareD1Adapter } = await import("./adapters/cloudflareD1Adapter.js");
+      const adapter = createCloudflareD1Adapter({ accountId, databaseId, apiToken });
+      if (!state.logged) {
+        console.log(`[DB] Driver: ${adapter.driver} (configured via setup) | database: ${databaseId.slice(0, 8)}...`);
+        state.logged = true;
+      }
+      const { runMigrationOnce } = await import("./migrate.js");
+      await runMigrationOnce(adapter);
+      return adapter;
+    }
+  }
+
+  const pgUrl = getPostgresUrl() || (fileConfig?.driver === "postgres" ? fileConfig?.postgres?.url : null);
   if (pgUrl) {
     const { createPostgresAdapter } = await import("./adapters/postgresAdapter.js");
     const adapter = await createPostgresAdapter(pgUrl);
@@ -140,4 +158,14 @@ function safeHost(url) {
 export function getAdapterSync() {
   if (!state.instance) throw new Error("[DB] adapter not initialized — await getAdapter() first");
   return state.instance;
+}
+
+export async function resetAdapter() {
+  if (state.instance?.close) {
+    try { await state.instance.close(); } catch {}
+  }
+  state.instance = null;
+  state.initPromise = null;
+  state.logged = false;
+  return getAdapter();
 }
