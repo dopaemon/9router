@@ -649,13 +649,46 @@ function startServer(updatePromise) {
   // Accept either a Promise (parallel update check) or a resolved value.
   const latestVersionPromise = Promise.resolve(updatePromise);
   const displayHost = getDisplayHost();
-  const url = `http://${displayHost}:${port}/dashboard`;
+
+  function isSetupCompleted() {
+    const configPath = path.join(getAppDataDir(), "db-config.json");
+    if (fs.existsSync(configPath)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+        if (cfg?.configured === true) return true;
+      } catch {}
+    }
+    const envPaths = [
+      path.join(getAppDataDir(), ".env"),
+      path.join(process.cwd(), ".env"),
+    ];
+    for (const p of envPaths) {
+      if (fs.existsSync(p)) {
+        try {
+          const content = fs.readFileSync(p, "utf8");
+          if (/\b(CF_D1=true|CF_D1=1|SUPABASE_DB_URL=|DATABASE_URL=|SETUP_COMPLETED=true|SETUP_COMPLETED=1)\b/.test(content)) {
+            return true;
+          }
+        } catch {}
+      }
+    }
+    return false;
+  }
+
+  const setupDone = isSetupCompleted();
+  const url = setupDone
+    ? `http://${displayHost}:${port}/dashboard`
+    : `http://${displayHost}:${port}/setup`;
+
+  if (!setupDone) {
+    console.log(`\n\x1b[36m👉 Setup needed: Open http://${displayHost}:${port}/setup to choose database (Cloudflare D1 / Supabase / SQLite)\x1b[0m\n`);
+  }
+
   // Surface real network exposure when bound to all interfaces (default 0.0.0.0).
   if (host === DEFAULT_HOST) {
     const lanIp = getLanIp();
     if (lanIp) console.log(`\x1b[33m⚠ Network-exposed: reachable at http://${lanIp}:${port} (bound 0.0.0.0). Use --host 127.0.0.1 for local-only.\x1b[0m`);
   }
-
   let restartCount = 0;
   let serverStartTime = Date.now();
 

@@ -108,7 +108,31 @@ export function saveEnvConfig(cfg) {
   return true;
 }
 
+function loadEnvIfPresent(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq > 0) {
+          const k = trimmed.slice(0, eq).trim();
+          const v = trimmed.slice(eq + 1).trim();
+          if (k && !process.env[k]) {
+            process.env[k] = v;
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
 export function isSetupComplete() {
+  // Ensure any .env on disk is parsed into process.env
+  loadEnvIfPresent(path.join(currentDataDir(), ".env"));
+  loadEnvIfPresent(path.join(process.cwd(), ".env"));
+
   const cfD1 = (process.env.CF_D1 || process.env.USE_CF_D1 || "").trim().toLowerCase();
   if (cfD1 === "true" || cfD1 === "1") return true;
 
@@ -119,16 +143,6 @@ export function isSetupComplete() {
 
   const fileConfig = readDbConfig();
   if (fileConfig?.configured === true) return true;
-
-  // Existing install check: if data.sqlite already existed before this feature,
-  // treat as completed to avoid disrupting existing local databases.
-  try {
-    const dataFile = currentDataFile();
-    if (fs.existsSync(dataFile) && fs.statSync(dataFile).size > 0) {
-      writeDbConfig({ configured: true, driver: "sqlite" });
-      return true;
-    }
-  } catch {}
 
   return false;
 }
