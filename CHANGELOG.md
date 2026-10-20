@@ -4,6 +4,7 @@
 - **DB**: optional Postgres / Supabase backend — set `SUPABASE_DB_URL` (or `DATABASE_URL`) to store state in Postgres instead of the local SQLite file; explicit opt-in with no silent fallback. New `src/lib/db/sqlDialect.js` bridges the two dialects (placeholders, identifier case, column types, portable upserts) so repos stay dialect-agnostic, and `scripts/db-copy-to-postgres.mjs` does a one-time idempotent copy of an existing local DB. TLS verification on by default (`PGSSL_NO_VERIFY=1` to opt out — the DB holds OAuth tokens and API keys, keep it private).
 
 ## Fixes
+- **OpenCode**: send `reasoning_effort` instead of the zai `thinking` object for `glm-5.3-flash-free` — OpenCode's inference service validates bodies strictly and answers `400 json: unknown field "thinking"` on both the free lane (`/inference/v1`) and Zen (`/zen/v1`)
 - **DB**: strip NUL bytes from bound strings so a value carrying raw binary no longer aborts the write on better-sqlite3 ("String contains null byte") or gets silently truncated at the first NUL on node:sqlite (#4917)
 - **DB**: serialize SQLite transactions (the four SQLite adapters share one connection, so overlapping async transactions could interleave SAVEPOINTs and roll back an unrelated writer's rows)
 
