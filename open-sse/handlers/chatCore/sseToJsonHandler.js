@@ -8,6 +8,7 @@ import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
+import { recordModelSpeed, SPEED_MODE } from "../../services/modelSpeed.js";
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
@@ -216,6 +217,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         + (usage.cache_creation_input_tokens || 0);
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
+      recordModelSpeed(provider, model, SPEED_MODE.JSON, usage.output_tokens, { total: totalLatency });
 
       saveRequestDetail(buildRequestDetail({
         ...ctx,
@@ -322,6 +324,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime }, rtk: ctx.rtk }));
 
     const totalLatency = Date.now() - requestStartTime;
+    recordModelSpeed(provider, model, SPEED_MODE.JSON, usage.completion_tokens ?? usage.output_tokens, { total: totalLatency });
     saveRequestDetail(buildRequestDetail({
       ...ctx,
       latency: { ttft: totalLatency, total: totalLatency },

@@ -33,6 +33,8 @@ import {
 } from "@/shared/constants/keyAccess.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
+import { normalizeAllowList } from "@/shared/utils/keyAccess.js";
 import * as log from "../utils/logger.js";
 
 const lower = (s) => String(s).toLowerCase();
@@ -46,19 +48,7 @@ const canonicalModel = (provider, model) => lower(`${provider}/${model}`);
  * restricted key sent as x-goog-api-key look like "no key" (= unrestricted).
  */
 export function extractClientApiKey(request) {
-  const headers = request?.headers;
-  if (!headers?.get) return null;
-  const auth = headers.get("Authorization");
-  if (auth?.startsWith("Bearer ")) return auth.slice(7);
-  const xApiKey = headers.get("x-api-key");
-  if (xApiKey) return xApiKey;
-  const googKey = headers.get("x-goog-api-key");
-  if (googKey) return googKey;
-  try {
-    return new URL(request.url).searchParams.get("key") || null;
-  } catch {
-    return null;
-  }
+  return extractApiKeyCandidates(request)[0] || null;
 }
 
 /**
@@ -68,16 +58,28 @@ export function extractClientApiKey(request) {
  * decides what an identified key may call.
  */
 export async function getKeyAccessContext(request) {
-  const apiKey = extractClientApiKey(request);
-  if (!apiKey) return null;
-  const record = await getApiKeyByKey(apiKey);
-  if (!record?.access?.restricted) return null;
+  const records = [];
+  for (const candidate of extractApiKeyCandidates(request)) {
+    const record = await getApiKeyByKey(candidate);
+    if (record?.isActive === true) records.push(record);
+  }
+  if (records.length === 0) return null;
+  if (records.some((r) => !r.access?.restricted)) return null;
   return {
-    keyId: record.id,
-    keyName: record.name || record.id,
-    allow: record.access.allow || [],
+    keyId: records.map((r) => r.id).join(","),
+    keyName: records.map((r) => r.name || r.id).join(","),
+    allow: normalizeAllowList(records.flatMap((r) => r.access.allow || [])),
+    endpoint: requestPathname(request),
     _sets: null,
   };
+}
+
+function requestPathname(request) {
+  try {
+    return request?.nextUrl?.pathname || new URL(request.url).pathname;
+  } catch {
+    return null;
+  }
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
@@ -112,7 +114,14 @@ async function isModelStringAllowed(ctx, requested) {
 
 export function keyAccessDeniedResponse(ctx, requested) {
   log.warn("AUTH", `key-access: key "${ctx.keyName}" denied "${requested}"`);
-  return errorResponse(HTTP_STATUS.FORBIDDEN, keyAccessDeniedMessage(requested));
+  const message = keyAccessDeniedMessage(requested);
+  if (ctx.endpoint?.includes("/v1/messages")) {
+    return new Response(
+      JSON.stringify({ type: "error", error: { type: "permission_error", message } }),
+      { status: HTTP_STATUS.FORBIDDEN, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+    );
+  }
+  return errorResponse(HTTP_STATUS.FORBIDDEN, message);
 }
 
 /**
