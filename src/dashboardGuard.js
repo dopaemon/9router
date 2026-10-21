@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
+import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
@@ -140,19 +141,18 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  const apiKeyHeader = request.headers.get("x-api-key");
-  if (apiKeyHeader) return apiKeyHeader;
-  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
-  if (googleApiKeyHeader) return googleApiKeyHeader;
-  return request.nextUrl.searchParams?.get("key") || null;
+  return extractApiKeyCandidates(request)[0] || null;
 }
 
+// Anthropic clients (Claude Code with a claude.ai session or
+// ANTHROPIC_AUTH_TOKEN) send an unrelated Authorization header ALONGSIDE a
+// valid x-api-key, so every presented credential is checked, not just the
+// first one found.
 async function hasValidApiKey(request) {
-  const apiKey = extractApiKey(request);
-  if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  for (const apiKey of extractApiKeyCandidates(request)) {
+    if (await validateApiKey(apiKey)) return true;
+  }
+  return false;
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -202,6 +202,7 @@ export const __test__ = {
   isPublicLlmApi,
   extractApiKey,
   canAccessPublicLlmApi,
+  extractApiKeyCandidates,
   canAccessLocalOnlyRoute,
 };
 
@@ -224,9 +225,16 @@ export async function proxy(request) {
 
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
+    // Anthropic clients (Claude Code, anthropic SDKs) parse the standard error
+    // envelope; other endpoints keep the legacy flat shape.
+    if (pathname.includes("/v1/messages")) {
+      return NextResponse.json(
+        { type: "error", error: { type: "authentication_error", message: "API key required for remote API access" } },
+        { status: 401 }
+      );
+    }
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }
-
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
+  resolveClientApiKey: vi.fn(async () => ({ apiKey: null, valid: false })),
   extractApiKey: vi.fn(() => null),
   isValidApiKey: vi.fn(),
   getSettings: vi.fn(),
@@ -18,6 +19,8 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: mocks.clearAccountError,
   extractApiKey: mocks.extractApiKey,
   isValidApiKey: mocks.isValidApiKey,
+  // Handlers resolve the client key across all presented credentials.
+  resolveClientApiKey: mocks.resolveClientApiKey,
 }));
 
 vi.mock("@/lib/localDb", () => ({
