@@ -131,9 +131,9 @@ export function enrichRtkWithOutputSavings(rtk, completionTokens) {
   };
 }
 
-export function buildRequestDetail(base, overrides = {}) {
-  const outTok = base.tokens?.completion_tokens ?? base.tokens?.output_tokens ?? 0;
-  const effectiveRtk = enrichRtkWithOutputSavings(base.rtk, outTok);
+export function buildRequestDetail(base = {}, overrides = {}) {
+  const outTok = base?.tokens?.completion_tokens ?? base?.tokens?.output_tokens ?? 0;
+  const effectiveRtk = enrichRtkWithOutputSavings(base?.rtk, outTok);
   return {
     provider: base.provider || "unknown",
     model: base.model || "unknown",

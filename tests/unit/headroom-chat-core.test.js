@@ -126,6 +126,31 @@ describe("handleChatCore Headroom diagnostics", () => {
     expect(logs).not.toContain("secret");
     expect(logs).not.toContain("abc123");
   });
+  it("does not crash when caveman or ponytail is enabled with no prior RTK hits", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    for (const flags of [
+      { cavemanEnabled: true, cavemanLevel: "full" },
+      { ponytailEnabled: true, ponytailLevel: "full" },
+      { cavemanEnabled: true, cavemanLevel: "full", ponytailEnabled: true, ponytailLevel: "lite" },
+    ]) {
+      await expect(
+        handleChatCore({
+          body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] },
+          modelInfo: { provider: "openai", model: "gpt-4o" },
+          credentials: { apiKey: "test-key", providerSpecificData: {} },
+          log,
+          connectionId: "test-conn",
+          rtkEnabled: true,
+          ...flags,
+          clientRawRequest: {
+            endpoint: "/v1/chat/completions",
+            body: {},
+            headers: { accept: "application/json" },
+          },
+        })
+      ).resolves.toBeDefined();
+    }
+  });
 
   it("masks credentials and query strings in Headroom endpoint diagnostics", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };

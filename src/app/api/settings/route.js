@@ -56,6 +56,7 @@ export async function GET() {
         dbLocation = "Supabase / Postgres";
       }
     }
+    dbConfig.driver = dbDriver;
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
