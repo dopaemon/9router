@@ -10,7 +10,6 @@ export const APP_CONFIG = {
 // GitHub configuration
 export const GITHUB_CONFIG = {
   changelogUrl: "https://raw.githubusercontent.com/dopaemon/9router-supabase/refs/heads/main/CHANGELOG.md",
-  donateUrl: "https://9router.com/api/donate",
 };
 
 // Updater configuration
