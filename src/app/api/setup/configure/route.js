@@ -11,8 +11,55 @@ export async function POST(request) {
       return NextResponse.json({ error: "Setup is already completed and cannot be re-run remotely" }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { driver, d1, postgres } = body;
+    let driver = "sqlite";
+    let d1 = null;
+    let postgres = null;
+    let backupFileBuffer = null;
+    let backupFileName = "";
+
+    const contentType = request.headers.get("content-type") || "";
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      driver = (formData.get("driver") || "sqlite").toString();
+      const d1Json = formData.get("d1");
+      if (d1Json) {
+        try { d1 = typeof d1Json === "string" ? JSON.parse(d1Json) : d1Json; } catch {}
+      } else {
+        d1 = {
+          accountId: formData.get("cfAccountId")?.toString(),
+          databaseId: formData.get("cfDatabaseId")?.toString(),
+          apiToken: formData.get("cfApiToken")?.toString(),
+        };
+      }
+      const pgJson = formData.get("postgres");
+      if (pgJson) {
+        try { postgres = typeof pgJson === "string" ? JSON.parse(pgJson) : pgJson; } catch {}
+      } else {
+        postgres = { url: formData.get("pgUrl")?.toString() };
+      }
+
+      const file = formData.get("backupFile");
+      if (file && typeof file.arrayBuffer === "function") {
+        backupFileName = (file.name || "").toLowerCase();
+        const ab = await file.arrayBuffer();
+        if (ab.byteLength > 0) {
+          backupFileBuffer = Buffer.from(ab);
+        }
+      }
+    } else {
+      const body = await request.json();
+      driver = body.driver || "sqlite";
+      d1 = body.d1;
+      postgres = body.postgres;
+      if (body.backup) {
+        backupFileName = (body.backup.filename || "").toLowerCase();
+        if (body.backup.sqliteBase64) {
+          backupFileBuffer = Buffer.from(body.backup.sqliteBase64, "base64");
+        } else if (body.backup.jsonContent) {
+          backupFileBuffer = Buffer.from(body.backup.jsonContent, "utf8");
+        }
+      }
+    }
 
     let cfg = { configured: true, driver: driver || "sqlite" };
 
@@ -76,6 +123,32 @@ export async function POST(request) {
     // Re-initialize adapter with new config
     await resetAdapter();
 
+    // If backup file provided, import it now
+    if (backupFileBuffer && backupFileBuffer.length > 0) {
+      try {
+        const isSqlite =
+          backupFileName.endsWith(".sqlite") ||
+          backupFileName.endsWith(".db") ||
+          backupFileBuffer.subarray(0, 16).toString("utf8").startsWith("SQLite format 3");
+
+        if (isSqlite) {
+          const { importDbFromSqlite } = await import("@/lib/localDb");
+          await importDbFromSqlite(backupFileBuffer);
+        } else {
+          const raw = backupFileBuffer.toString("utf8");
+          const payload = JSON.parse(raw);
+          const { importDb } = await import("@/lib/localDb");
+          await importDb(payload);
+        }
+      } catch (importErr) {
+        console.error("[DB][setup] Error importing backup:", importErr);
+        return NextResponse.json(
+          { error: `Cấu hình DB thành công nhưng import file backup thất bại: ${importErr.message}` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Auto-authenticate the setup session so the user is immediately logged in
     try {
       const cookieStore = await cookies();
@@ -84,7 +157,11 @@ export async function POST(request) {
       console.warn("[DB][setup] Could not set auth cookie automatically:", authErr.message);
     }
 
-    return NextResponse.json({ success: true, driver: cfg.driver });
+    return NextResponse.json({
+      success: true,
+      driver: cfg.driver,
+      imported: Boolean(backupFileBuffer && backupFileBuffer.length > 0),
+    });
   } catch (error) {
     console.error("[DB][setup] Error in setup:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

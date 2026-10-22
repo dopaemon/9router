@@ -197,6 +197,18 @@ export async function importDb(payload) {
 
   return await exportDb();
 }
+export async function exportDbSqlite() {
+  const payload = await exportDb();
+  const { exportDbToSqliteBuffer } = await import("./helpers/sqliteExportImport.js");
+  return await exportDbToSqliteBuffer(payload);
+}
+
+export async function importDbFromSqlite(sqliteBuffer) {
+  const { extractPayloadFromSqliteBuffer } = await import("./helpers/sqliteExportImport.js");
+  const payload = await extractPayloadFromSqliteBuffer(sqliteBuffer);
+  return await importDb(payload);
+}
+
 
 export async function resetDb(keepPassword = true) {
   const db = await getAdapter();

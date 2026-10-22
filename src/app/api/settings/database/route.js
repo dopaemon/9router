@@ -16,6 +16,23 @@ export async function GET(request) {
     if (!isCliRequest(request) && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
+    const { searchParams } = new URL(request.url);
+    const format = (searchParams.get("format") || "json").toLowerCase();
+
+    if (format === "sqlite") {
+      const { exportDbSqlite } = await import("@/lib/localDb");
+      const buffer = await exportDbSqlite();
+      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/x-sqlite3",
+          "Content-Disposition": `attachment; filename="9router-backup-${stamp}.sqlite"`,
+          "Content-Length": String(buffer.length),
+        },
+      });
+    }
+
     const payload = await exportDb();
     return NextResponse.json(payload);
   } catch (error) {
@@ -26,11 +43,44 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { password, ...payload } = await request.json();
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
-      return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    const contentType = request.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      const password = formData.get("password");
+      if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
+        return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+      }
+      const file = formData.get("file");
+      if (!file) {
+        return NextResponse.json({ error: "No backup file uploaded" }, { status: 400 });
+      }
+      const fileName = (file.name || "").toLowerCase();
+      const buf = Buffer.from(await file.arrayBuffer());
+
+      if (fileName.endsWith(".sqlite") || fileName.endsWith(".db") || buf.subarray(0, 16).toString("utf8").startsWith("SQLite format 3")) {
+        const { importDbFromSqlite } = await import("@/lib/localDb");
+        await importDbFromSqlite(buf);
+      } else {
+        const raw = buf.toString("utf8");
+        const payload = JSON.parse(raw);
+        await importDb(payload);
+      }
+    } else {
+      const body = await request.json();
+      const { password, ...payload } = body;
+      if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
+        return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+      }
+
+      if (payload.sqliteBase64) {
+        const buf = Buffer.from(payload.sqliteBase64, "base64");
+        const { importDbFromSqlite } = await import("@/lib/localDb");
+        await importDbFromSqlite(buf);
+      } else {
+        await importDb(payload);
+      }
     }
-    await importDb(payload);
 
     // Ensure proxy settings take effect immediately after a DB import.
     try {

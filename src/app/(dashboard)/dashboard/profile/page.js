@@ -32,7 +32,7 @@ export default function ProfilePage() {
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
-  const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
+  const [dbAuth, setDbAuth] = useState({ open: false, mode: "", exportFormat: "json", password: "" });
   const pendingImportRef = useRef(null);
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
@@ -660,11 +660,11 @@ export default function ProfilePage() {
     }
   };
 
-  const handleExportDatabase = async (password) => {
+  const handleExportDatabase = async (password, format = "json") => {
     setDbLoading(true);
     setDbStatus({ type: "", message: "" });
     try {
-      const res = await fetch("/api/settings/database", {
+      const res = await fetch(`/api/settings/database?format=${encodeURIComponent(format)}`, {
         headers: { "x-9r-password": password },
       });
       if (!res.ok) {
@@ -672,20 +672,30 @@ export default function ProfilePage() {
         throw new Error(data.error || "Failed to export database");
       }
 
-      const payload = await res.json();
-      const content = JSON.stringify(payload, null, 2);
-      const blob = new Blob([content], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
       const stamp = new Date().toISOString().replace(/[.:]/g, "-");
-      anchor.href = url;
-      anchor.download = `9router-backup-${stamp}.json`;
+      const anchor = document.createElement("a");
+      let url;
+
+      if (format === "sqlite") {
+        const blob = await res.blob();
+        url = URL.createObjectURL(blob);
+        anchor.href = url;
+        anchor.download = `9router-backup-${stamp}.sqlite`;
+      } else {
+        const payload = await res.json();
+        const content = JSON.stringify(payload, null, 2);
+        const blob = new Blob([content], { type: "application/json" });
+        url = URL.createObjectURL(blob);
+        anchor.href = url;
+        anchor.download = `9router-backup-${stamp}.json`;
+      }
+
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
 
-      setDbStatus({ type: "success", message: "Database backup downloaded" });
+      setDbStatus({ type: "success", message: `Database backup (${format.toUpperCase()}) downloaded` });
     } catch (err) {
       setDbStatus({ type: "error", message: err.message || "Failed to export database" });
     } finally {
@@ -707,14 +717,27 @@ export default function ProfilePage() {
     if (!file) return;
     setDbLoading(true);
     try {
-      const raw = await file.text();
-      const payload = JSON.parse(raw);
+      const fileName = (file.name || "").toLowerCase();
+      const isSqlite = fileName.endsWith(".sqlite") || fileName.endsWith(".db");
+      let res;
 
-      const res = await fetch("/api/settings/database", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, password }),
-      });
+      if (isSqlite) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("password", password);
+        res = await fetch("/api/settings/database", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const raw = await file.text();
+        const payload = JSON.parse(raw);
+        res = await fetch("/api/settings/database", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, password }),
+        });
+      }
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -722,7 +745,7 @@ export default function ProfilePage() {
       }
 
       await reloadSettings();
-      setDbStatus({ type: "success", message: "Database imported successfully" });
+      setDbStatus({ type: "success", message: `Database imported successfully (${isSqlite ? "SQLite" : "JSON"})` });
     } catch (err) {
       setDbStatus({ type: "error", message: err.message || "Invalid backup file" });
     } finally {
@@ -759,9 +782,9 @@ export default function ProfilePage() {
 
   // Confirm password modal, then run export, import, or reset.
   const handleDbAuthConfirm = async () => {
-    const { mode, password } = dbAuth;
-    setDbAuth({ open: false, mode: "", password: "" });
-    if (mode === "export") await handleExportDatabase(password);
+    const { mode, exportFormat, password } = dbAuth;
+    setDbAuth({ open: false, mode: "", exportFormat: "json", password: "" });
+    if (mode === "export") await handleExportDatabase(password, exportFormat || "json");
     else if (mode === "import") await runImportDatabase(password);
     else if (mode === "reset") await handleResetDatabase(password);
   };
@@ -911,15 +934,24 @@ export default function ProfilePage() {
                 )}
               </div>
             )}
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
                 icon="download"
-                onClick={() => setDbAuth({ open: true, mode: "export", password: "" })}
+                onClick={() => setDbAuth({ open: true, mode: "export", exportFormat: "json", password: "" })}
                 loading={dbLoading}
                 className="w-full sm:w-auto"
               >
-                Download Backup
+                Download JSON
+              </Button>
+              <Button
+                variant="secondary"
+                icon="database"
+                onClick={() => setDbAuth({ open: true, mode: "export", exportFormat: "sqlite", password: "" })}
+                loading={dbLoading}
+                className="w-full sm:w-auto"
+              >
+                Download SQLite
               </Button>
               <Button
                 variant="outline"
@@ -942,7 +974,7 @@ export default function ProfilePage() {
               <input
                 ref={importFileRef}
                 type="file"
-                accept="application/json,.json"
+                accept="application/json,.json,.sqlite,.db,application/x-sqlite3"
                 className="hidden"
                 onChange={handleImportDatabase}
               />

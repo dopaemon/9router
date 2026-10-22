@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Button, Input } from "@/shared/components";
-
 export default function SetupPage() {
   const [driver, setDriver] = useState("cloudflare-d1");
   const [loading, setLoading] = useState(false);
@@ -18,6 +17,9 @@ export default function SetupPage() {
   // Postgres / Supabase form fields
   const [pgUrl, setPgUrl] = useState("");
 
+  // Backup import file (JSON or SQLite)
+  const [backupFile, setBackupFile] = useState(null);
+  const fileInputRef = useRef(null);
   useEffect(() => {
     async function checkStatus() {
       try {
@@ -44,23 +46,42 @@ export default function SetupPage() {
     setError("");
 
     try {
-      const payload = {
-        driver,
-        d1: {
-          accountId: cfAccountId,
-          databaseId: cfDatabaseId,
-          apiToken: cfApiToken,
-        },
-        postgres: {
-          url: pgUrl,
-        },
-      };
+      let res;
+      if (backupFile) {
+        const formData = new FormData();
+        formData.append("driver", driver);
+        if (driver === "cloudflare-d1") {
+          formData.append("cfAccountId", cfAccountId);
+          formData.append("cfDatabaseId", cfDatabaseId);
+          formData.append("cfApiToken", cfApiToken);
+        } else if (driver === "postgres") {
+          formData.append("pgUrl", pgUrl);
+        }
+        formData.append("backupFile", backupFile);
 
-      const res = await fetch("/api/setup/configure", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+        res = await fetch("/api/setup/configure", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const payload = {
+          driver,
+          d1: {
+            accountId: cfAccountId,
+            databaseId: cfDatabaseId,
+            apiToken: cfApiToken,
+          },
+          postgres: {
+            url: pgUrl,
+          },
+        };
+
+        res = await fetch("/api/setup/configure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
 
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -223,6 +244,72 @@ export default function SetupPage() {
                 Bạn có thể bắt đầu ngay mà không cần tài khoản cloud hay token API.
               </div>
             )}
+            {/* Backup file import section */}
+            <div className="p-4 rounded-xl border border-border-subtle bg-surface-2 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-brand-500 text-[20px]">settings_backup_restore</span>
+                  <span className="text-xs font-semibold text-text-main">
+                    Khôi phục từ file sao lưu (Tùy chọn)
+                  </span>
+                </div>
+                <span className="text-[11px] text-text-muted">.json / .sqlite / .db</span>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Nếu bạn có file backup từ phiên bản trước, chọn file tại đây để khôi phục toàn bộ connections, API keys và cấu hình vào database mới.
+              </p>
+
+              {backupFile ? (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-surface border border-brand-500/30">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="material-symbols-outlined text-brand-500 text-[18px]">
+                      {backupFile.name.endsWith(".json") ? "description" : "database"}
+                    </span>
+                    <span className="text-xs font-medium text-text-main truncate max-w-[260px]">
+                      {backupFile.name}
+                    </span>
+                    <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-bg">
+                      {(backupFile.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBackupFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    className="text-text-muted hover:text-red-500 transition-colors p-1"
+                    title="Xóa file đã chọn"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,.sqlite,.db,application/json,application/x-sqlite3"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) setBackupFile(f);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    icon="upload"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full text-xs"
+                  >
+                    Chọn file backup (.json / .sqlite)
+                  </Button>
+                </div>
+              )}
+            </div>
+
 
             {error && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-medium">
@@ -232,7 +319,9 @@ export default function SetupPage() {
 
             {success && (
               <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-500 text-xs font-medium">
-                Kết nối thành công! Đang chuyển hướng vào hệ thống...
+                {backupFile
+                  ? "Cấu hình DB & khôi phục dữ liệu thành công! Đang chuyển hướng..."
+                  : "Kết nối thành công! Đang chuyển hướng vào hệ thống..."}
               </div>
             )}
 
@@ -244,7 +333,9 @@ export default function SetupPage() {
               loading={loading}
               disabled={success}
             >
-              {driver === "sqlite" ? "Bắt đầu với SQLite" : "Kiểm tra & Lưu cấu hình"}
+              {backupFile
+                ? (driver === "sqlite" ? "Khôi phục & Bắt đầu với SQLite" : "Lưu cấu hình & Khôi phục dữ liệu")
+                : (driver === "sqlite" ? "Bắt đầu với SQLite" : "Kiểm tra & Lưu cấu hình")}
             </Button>
           </form>
         </Card>
