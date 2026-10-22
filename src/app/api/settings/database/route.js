@@ -99,6 +99,114 @@ export async function POST(request) {
     );
   }
 }
+export async function PUT(request) {
+  try {
+    const body = await request.json();
+    const { password, driver, d1, postgres, migrateData = true } = body;
+
+    const pw = request.headers.get(PASSWORD_HEADER) || password;
+    if (!isCliRequest(request) && !(await verifyDashboardPassword(pw))) {
+      return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    }
+
+    const selectedDriver = driver || "sqlite";
+    let cfg = { configured: true, driver: selectedDriver };
+
+    if (selectedDriver === "cloudflare-d1") {
+      const accountId = (d1?.accountId || "").trim();
+      const databaseId = (d1?.databaseId || "").trim();
+      const apiToken = (d1?.apiToken || "").trim();
+
+      if (!accountId || !databaseId || !apiToken) {
+        return NextResponse.json(
+          { error: "Vui lòng nhập đầy đủ Account ID, Database ID và API Token cho Cloudflare D1." },
+          { status: 400 }
+        );
+      }
+
+      const { createCloudflareD1Adapter } = await import("@/lib/db/adapters/cloudflareD1Adapter.js");
+      try {
+        const testAdapter = createCloudflareD1Adapter({ accountId, databaseId, apiToken });
+        await testAdapter.get("SELECT 1 as ping");
+      } catch (err) {
+        return NextResponse.json(
+          { error: `Kết nối Cloudflare D1 thất bại: ${err.message}` },
+          { status: 400 }
+        );
+      }
+
+      cfg.d1 = { accountId, databaseId, apiToken };
+    } else if (selectedDriver === "postgres") {
+      const url = (postgres?.url || "").trim();
+      if (!url) {
+        return NextResponse.json(
+          { error: "Vui lòng nhập Connection String của Supabase / PostgreSQL." },
+          { status: 400 }
+        );
+      }
+
+      const { createPostgresAdapter } = await import("@/lib/db/adapters/postgresAdapter.js");
+      try {
+        const testAdapter = await createPostgresAdapter(url);
+        await testAdapter.get("SELECT 1 as ping");
+        await testAdapter.close?.();
+      } catch (err) {
+        return NextResponse.json(
+          { error: `Kết nối Supabase / Postgres thất bại: ${err.message}` },
+          { status: 400 }
+        );
+      }
+
+      cfg.postgres = { url };
+    } else {
+      // Local SQLite
+      cfg.driver = "sqlite";
+    }
+
+    // Export current DB data if migration is requested
+    let currentPayload = null;
+    if (migrateData) {
+      try {
+        currentPayload = await exportDb();
+      } catch (expErr) {
+        console.warn("[Settings][DatabaseSwitch] Export current DB failed:", expErr.message);
+      }
+    }
+
+    const { writeDbConfig, saveEnvConfig } = await import("@/lib/db/setupStatus.js");
+    const { resetAdapter } = await import("@/lib/db/driver.js");
+
+    writeDbConfig(cfg);
+    saveEnvConfig(cfg);
+    await resetAdapter();
+
+    // Import current data into the newly activated adapter
+    if (migrateData && currentPayload) {
+      try {
+        await importDb(currentPayload);
+      } catch (impErr) {
+        console.warn("[Settings][DatabaseSwitch] Migration into new DB failed:", impErr.message);
+      }
+    }
+
+    try {
+      const settings = await getSettings();
+      applyOutboundProxyEnv(settings);
+    } catch (_) {}
+
+    return NextResponse.json({
+      success: true,
+      driver: cfg.driver,
+      migrated: Boolean(migrateData && currentPayload)
+    });
+  } catch (error) {
+    console.error("[Settings][DatabaseSwitch] Error:", error);
+    return NextResponse.json(
+      { error: error?.message || "Failed to switch database" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function DELETE(request) {
   try {

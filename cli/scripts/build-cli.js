@@ -228,10 +228,6 @@ function buildCliPackage() {
   console.log("3️⃣ b Configuring SQLite drivers...");
   function ensureModuleInBundle(pkg) {
     const dest = path.join(cliAppDir, "node_modules", pkg);
-    if (fs.existsSync(dest)) {
-      console.log(`✅ ${pkg} already bundled`);
-      return;
-    }
     const candidates = [
       path.join(appDir, "node_modules", pkg),
       path.join(rootDir, "node_modules", pkg),
@@ -243,7 +239,7 @@ function buildCliPackage() {
     }
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     copyRecursive(src, dest);
-    console.log(`✅ Bundled ${pkg}`);
+    console.log(`✅ Bundled / synced ${pkg}`);
   }
   ensureModuleInBundle("sql.js");
   // `open` is external (see serverExternalPackages in next.config.mjs), so it must exist in

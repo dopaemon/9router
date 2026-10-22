@@ -23,18 +23,31 @@ export async function GET() {
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
 
-    const isCfD1 = (process.env.CF_D1 || process.env.USE_CF_D1 || "").trim().toLowerCase();
-    const cfD1Active = isCfD1 === "true" || isCfD1 === "1";
-    const pgUrl = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
-    
-    let dbDriver = "sqlite";
-    let dbLocation = "~/.9router/db/data.sqlite";
+    const { readDbConfig } = await import("@/lib/db/setupStatus.js");
+    const fileConfig = readDbConfig();
 
-    if (cfD1Active) {
+    const isCfD1 = (process.env.CF_D1 || process.env.USE_CF_D1 || "").trim().toLowerCase();
+    const cfD1Active = isCfD1 === "true" || isCfD1 === "1" || fileConfig?.driver === "cloudflare-d1";
+    const pgUrl = fileConfig?.postgres?.url || process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+
+    let dbDriver = fileConfig?.driver || "sqlite";
+    let dbLocation = "~/.9router/db/data.sqlite";
+    let dbConfig = {
+      driver: dbDriver,
+      d1: {
+        accountId: fileConfig?.d1?.accountId || process.env.CF_ACCOUNT_ID || "",
+        databaseId: fileConfig?.d1?.databaseId || process.env.CF_DATABASE_ID || "",
+      },
+      postgres: {
+        url: pgUrl || "",
+      },
+    };
+
+    if (cfD1Active || fileConfig?.driver === "cloudflare-d1") {
       dbDriver = "cloudflare-d1";
-      const dbId = process.env.CF_DATABASE_ID || process.env.CF_D1_DATABASE_ID || process.env.CLOUDFLARE_DATABASE_ID || "";
+      const dbId = fileConfig?.d1?.databaseId || process.env.CF_DATABASE_ID || process.env.CF_D1_DATABASE_ID || process.env.CLOUDFLARE_DATABASE_ID || "";
       dbLocation = dbId ? `Cloudflare D1 (${dbId.slice(0, 8)}...)` : "Cloudflare D1";
-    } else if (pgUrl) {
+    } else if (fileConfig?.driver === "postgres" || pgUrl) {
       dbDriver = "postgres";
       try {
         const parsed = new URL(pgUrl);
@@ -43,7 +56,6 @@ export async function GET() {
         dbLocation = "Supabase / Postgres";
       }
     }
-
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
@@ -51,6 +63,7 @@ export async function GET() {
       hasPassword: !!password,
       dbDriver,
       dbLocation,
+      dbConfig,
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error getting settings:", error);

@@ -55,7 +55,7 @@ export default function OverviewCards({ stats }) {
         />
       </Card>
       <Card className={CARD}>
-        <span className={LABEL}>RTK Gain</span>
+        <span className={LABEL}>Token Saver Gain</span>
         <AnimatedNumber
           value={stats.totalRtkTokensSaved || 0}
           format={fmtPlus}
@@ -65,7 +65,7 @@ export default function OverviewCards({ stats }) {
         <span className="text-[10px] text-text-muted">
           {stats.totalPromptTokens > 0 && stats.totalRtkTokensSaved > 0
             ? `${((stats.totalRtkTokensSaved / (stats.totalPromptTokens + stats.totalRtkTokensSaved)) * 100).toFixed(1)}% input saved`
-            : "Tokens saved via RTK"}
+            : "Tokens saved via RTK & OmniRoute"}
         </span>
       </Card>
       <Card className={CARD}>

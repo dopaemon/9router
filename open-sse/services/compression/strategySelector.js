@@ -113,6 +113,7 @@ export async function applyStackedPipelineAsync(body, options = {}) {
     if (result && result.compressed && result.body) {
       currentBody = result.body;
       anyCompressed = true;
+      techniques.push(engineId);
       if (result.stats?.techniquesUsed) techniques.push(...result.stats.techniquesUsed);
       if (result.stats?.rulesApplied) rules.push(...result.stats.rulesApplied);
     }
@@ -161,6 +162,7 @@ export function applyStackedPipeline(body, options = {}) {
     if (result && result.compressed && result.body) {
       currentBody = result.body;
       anyCompressed = true;
+      techniques.push(engineId);
       if (result.stats?.techniquesUsed) techniques.push(...result.stats.techniquesUsed);
       if (result.stats?.rulesApplied) rules.push(...result.stats.rulesApplied);
     }

@@ -7,8 +7,15 @@ let SQL = null;
 
 async function loadSql() {
   if (SQL) return SQL;
-  SQL = await initSqlJs();
-  return SQL;
+  try {
+    const inlineMod = await import("sql.js/dist/sql-wasm-inline.js");
+    const initFn = inlineMod.default || inlineMod;
+    SQL = await initFn();
+    return SQL;
+  } catch (_) {
+    SQL = await initSqlJs();
+    return SQL;
+  }
 }
 
 export async function createSqlJsAdapter(filePath) {

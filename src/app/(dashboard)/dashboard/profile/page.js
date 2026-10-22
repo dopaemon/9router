@@ -34,6 +34,15 @@ export default function ProfilePage() {
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
   const [dbAuth, setDbAuth] = useState({ open: false, mode: "", exportFormat: "json", password: "" });
   const pendingImportRef = useRef(null);
+  const [dbSwitchOpen, setDbSwitchOpen] = useState(false);
+  const [targetDbDriver, setTargetDbDriver] = useState("sqlite");
+  const [cfAccountId, setCfAccountId] = useState("");
+  const [cfDatabaseId, setCfDatabaseId] = useState("");
+  const [cfApiToken, setCfApiToken] = useState("");
+  const [pgUrl, setPgUrl] = useState("");
+  const [migrateData, setMigrateData] = useState(true);
+  const [dbSwitchLoading, setDbSwitchLoading] = useState(false);
+  const [dbSwitchStatus, setDbSwitchStatus] = useState({ type: "", message: "" });
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
     oidcIssuerUrl: "",
@@ -780,13 +789,57 @@ export default function ProfilePage() {
     }
   };
 
-  // Confirm password modal, then run export, import, or reset.
+  const handleSaveDbSwitch = async (password = "") => {
+    setDbSwitchLoading(true);
+    setDbSwitchStatus({ type: "", message: "" });
+    try {
+      const payload = {
+        driver: targetDbDriver,
+        d1: { accountId: cfAccountId, databaseId: cfDatabaseId, apiToken: cfApiToken },
+        postgres: { url: pgUrl },
+        migrateData,
+        password,
+      };
+
+      const res = await fetch("/api/settings/database", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-9r-password": password,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Không thể chuyển database");
+      }
+
+      setDbSwitchStatus({
+        type: "success",
+        message: `Đã chuyển sang ${targetDbDriver.toUpperCase()} thành công!` +
+          (data.migrated ? " (Dữ liệu đã được chuyển sang database mới)" : "")
+      });
+      await reloadSettings();
+      setTimeout(() => {
+        setDbSwitchOpen(false);
+        setDbSwitchStatus({ type: "", message: "" });
+      }, 2000);
+    } catch (err) {
+      setDbSwitchStatus({ type: "error", message: err.message || "Không thể chuyển database" });
+    } finally {
+      setDbSwitchLoading(false);
+    }
+  };
+
+  // Confirm password modal, then run export, import, reset, or switchDb.
   const handleDbAuthConfirm = async () => {
     const { mode, exportFormat, password } = dbAuth;
     setDbAuth({ open: false, mode: "", exportFormat: "json", password: "" });
     if (mode === "export") await handleExportDatabase(password, exportFormat || "json");
     else if (mode === "import") await runImportDatabase(password);
     else if (mode === "reset") await handleResetDatabase(password);
+    else if (mode === "switchDb") await handleSaveDbSwitch(password);
   };
 
   const observabilityEnabled = settings.enableObservability === true;
@@ -857,12 +910,189 @@ export default function ProfilePage() {
                   {settings.dbLocation || "~/.9router/db/data.sqlite"}
                 </p>
               </div>
-              {settings.dbDriver && (
-                <span className="text-xs px-2.5 py-1 rounded-full font-mono font-medium self-start sm:self-center bg-brand-500/10 text-brand-600 dark:text-brand-300 border border-brand-500/20">
-                  {settings.dbDriver.toUpperCase()}
-                </span>
-              )}
+              <div className="flex items-center gap-2 self-start sm:self-center">
+                {settings.dbDriver && (
+                  <span className="text-xs px-2.5 py-1 rounded-full font-mono font-medium bg-brand-500/10 text-brand-600 dark:text-brand-300 border border-brand-500/20">
+                    {settings.dbDriver.toUpperCase()}
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  icon={dbSwitchOpen ? "expand_less" : "swap_horiz"}
+                  onClick={() => {
+                    const next = !dbSwitchOpen;
+                    setDbSwitchOpen(next);
+                    if (next) {
+                      setTargetDbDriver(settings.dbDriver || "sqlite");
+                      if (settings.dbConfig?.d1) {
+                        setCfAccountId(settings.dbConfig.d1.accountId || "");
+                        setCfDatabaseId(settings.dbConfig.d1.databaseId || "");
+                      }
+                      if (settings.dbConfig?.postgres) {
+                        setPgUrl(settings.dbConfig.postgres.url || "");
+                      }
+                      setDbSwitchStatus({ type: "", message: "" });
+                    }
+                  }}
+                >
+                  {dbSwitchOpen ? "Đóng" : "Chọn DB"}
+                </Button>
+              </div>
             </div>
+
+            {/* Database Switch / Selection Panel */}
+            {dbSwitchOpen && (
+              <div className="p-4 rounded-xl border border-brand-500/30 bg-surface-2 flex flex-col gap-4 transition-all">
+                <div>
+                  <h3 className="text-sm font-semibold text-text-main flex items-center gap-2">
+                    <span className="material-symbols-outlined text-brand-500 text-[20px]">database</span>
+                    Chọn cơ sở dữ liệu (Database Backend)
+                  </h3>
+                  <p className="text-xs text-text-muted mt-1">
+                    Chuyển đổi giữa Cloudflare D1, Supabase / PostgreSQL hoặc SQLite cục bộ
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setTargetDbDriver("cloudflare-d1"); setDbSwitchStatus({ type: "", message: "" }); }}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                      targetDbDriver === "cloudflare-d1"
+                        ? "border-brand-500 bg-brand-500/10 shadow-sm"
+                        : "border-border-subtle bg-surface hover:border-brand-500/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="material-symbols-outlined text-brand-500 text-[18px]">cloud</span>
+                      <span className="font-semibold text-xs sm:text-sm">Cloudflare D1</span>
+                    </div>
+                    <p className="text-[11px] text-text-muted">Serverless SQLite, miễn phí</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setTargetDbDriver("postgres"); setDbSwitchStatus({ type: "", message: "" }); }}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                      targetDbDriver === "postgres"
+                        ? "border-brand-500 bg-brand-500/10 shadow-sm"
+                        : "border-border-subtle bg-surface hover:border-brand-500/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="material-symbols-outlined text-brand-500 text-[18px]">database</span>
+                      <span className="font-semibold text-xs sm:text-sm">Supabase / Postgres</span>
+                    </div>
+                    <p className="text-[11px] text-text-muted">Multi-instance / Cloud DB</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setTargetDbDriver("sqlite"); setDbSwitchStatus({ type: "", message: "" }); }}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                      targetDbDriver === "sqlite"
+                        ? "border-brand-500 bg-brand-500/10 shadow-sm"
+                        : "border-border-subtle bg-surface hover:border-brand-500/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="material-symbols-outlined text-brand-500 text-[18px]">folder</span>
+                      <span className="font-semibold text-xs sm:text-sm">SQLite Cục bộ</span>
+                    </div>
+                    <p className="text-[11px] text-text-muted">Lưu trên máy, không cấu hình</p>
+                  </button>
+                </div>
+
+                {targetDbDriver === "cloudflare-d1" && (
+                  <div className="space-y-3 p-3 rounded-lg bg-surface border border-border-subtle">
+                    <Input
+                      label="Cloudflare Account ID"
+                      value={cfAccountId}
+                      onChange={(e) => setCfAccountId(e.target.value)}
+                      placeholder="e.g. 1a2b3c4d5e6f..."
+                    />
+                    <Input
+                      label="D1 Database ID"
+                      value={cfDatabaseId}
+                      onChange={(e) => setCfDatabaseId(e.target.value)}
+                      placeholder="e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    />
+                    <Input
+                      label="Cloudflare API Token"
+                      type="password"
+                      value={cfApiToken}
+                      onChange={(e) => setCfApiToken(e.target.value)}
+                      placeholder="Token with D1 Edit permissions"
+                    />
+                  </div>
+                )}
+
+                {targetDbDriver === "postgres" && (
+                  <div className="space-y-3 p-3 rounded-lg bg-surface border border-border-subtle">
+                    <Input
+                      label="PostgreSQL / Supabase Connection URL"
+                      value={pgUrl}
+                      onChange={(e) => setPgUrl(e.target.value)}
+                      placeholder="postgresql://postgres:password@db.xxxx.supabase.co:5432/postgres"
+                    />
+                    <p className="text-[11px] text-text-muted">
+                      Hỗ trợ Supabase Session Pooler (port 5432) hoặc Direct Connection.
+                    </p>
+                  </div>
+                )}
+
+                {targetDbDriver === "sqlite" && (
+                  <div className="p-3 rounded-lg bg-surface border border-border-subtle text-xs text-text-muted">
+                    Dữ liệu sẽ được lưu tại thư mục mặc định: <code className="text-text-main font-mono">~/.9router/db/data.sqlite</code>
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-text-main">
+                  <input
+                    type="checkbox"
+                    checked={migrateData}
+                    onChange={(e) => setMigrateData(e.target.checked)}
+                    className="rounded border-border text-brand-500 focus:ring-brand-500"
+                  />
+                  <span>Chuyển toàn bộ dữ liệu hiện tại (connections, keys, combos...) sang DB mới</span>
+                </label>
+
+                {dbSwitchStatus.message && (
+                  <p className={`text-xs ${dbSwitchStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                    {dbSwitchStatus.message}
+                  </p>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    loading={dbSwitchLoading}
+                    onClick={() => {
+                      if (settings.hasPassword) {
+                        setDbAuth({ open: true, mode: "switchDb", password: "" });
+                      } else {
+                        handleSaveDbSwitch("");
+                      }
+                    }}
+                  >
+                    Lưu & Chuyển Database
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDbSwitchOpen(false)}
+                    disabled={dbSwitchLoading}
+                  >
+                    Hủy
+                  </Button>
+                </div>
+              </div>
+            )}
             {settings.dbDriver === "postgres" && (
               <div className="flex flex-col gap-3 p-3 rounded-lg bg-bg border border-border">
                 <div className="flex items-center justify-between">

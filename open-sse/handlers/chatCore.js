@@ -28,7 +28,8 @@ import { compressMessages, formatRtkLog, getRtkSummary } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
  import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { applyCompressionAsync } from "../services/compression/strategySelector.js";
- import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { formatOmnirouteRtkSummary } from "../services/compression/stats.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
@@ -131,6 +132,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
 
+  let compressionStats = null;
   // OmniRoute compression pipeline (12 tiers: Session-Dedup, CCR, Lite, RTK, Responses Tool Output, Headroom, Relevance, Caveman, Aggressive, LLMLingua-2, Ultra, OmniGlyph)
   const headerCompression = clientRawRequest?.headers?.["x-omniroute-compression"] || clientRawRequest?.headers?.["x-compression"];
   const effectiveMode = headerCompression || (compressionEnabled ? (compressionMode || "stacked") : "off");
@@ -143,6 +145,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       });
       if (compResult?.compressed && compResult.body) {
         body = compResult.body;
+        compressionStats = compResult.stats;
         if (compResult.stats?.techniquesUsed?.length) {
           log?.info?.("COMPRESSION", `[${effectiveMode}] saved ~${compResult.stats.savingsPercent}% via [${compResult.stats.techniquesUsed.join(", ")}]`);
         }
@@ -151,7 +154,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log?.warn?.("COMPRESSION", `compression failed open: ${e?.message || e}`);
     }
   }
-
   // RTK compresses tool_result / tool content in the source body before translation
   // so all downstream translators (Gemini, Antigravity, Cursor, Claude, OpenAI)
   // carry the compressed content into upstream payloads.
@@ -301,7 +303,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // RTK: compress tool_result content. Skipped when already done pre-translate.
   const rtkStats = preTranslateRtk || compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
-  const rtkSummary = getRtkSummary(rtkStats);
+  const baseRtkSummary = getRtkSummary(rtkStats);
+  const rtkSummary = formatOmnirouteRtkSummary(compressionStats, baseRtkSummary);
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   const headroomDiagnostics = {};
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
@@ -318,19 +321,37 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const xf = [];
 
   if (rtkStats?.hits?.length) xf.push(`RTK:${rtkStats.hits.length}`);
-
+  const outputDirectives = [];
   // Caveman: inject terse-style system prompt
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
+    outputDirectives.push({ type: "caveman", level: cavemanLevel });
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
+    outputDirectives.push({ type: "ponytail", level: ponytailLevel });
   }
 
+  if (outputDirectives.length > 0) {
+    if (rtkSummary) {
+      rtkSummary.outputDirectives = outputDirectives;
+    } else {
+      rtkSummary = {
+        applied: false,
+        outputDirectives,
+        tokensSavedEst: 0,
+        bytesSaved: 0,
+        bytesBefore: 0,
+        bytesAfter: 0,
+        filters: [],
+        hits: 0,
+      };
+    }
+  }
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
   if (pxpipeEnabled) {

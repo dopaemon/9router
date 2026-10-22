@@ -1,4 +1,6 @@
-import initSqlJs from "sql.js";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { PRAGMA_SQL, TABLES, buildCreateTableSql } from "../schema.js";
 import { stringifyJson, parseJson } from "./jsonCol.js";
 import { keyAccessToColumns, keyAccessFromColumns } from "../../../shared/utils/keyAccess.js";
@@ -6,14 +8,50 @@ import { KEY_ACCESS_UNRESTRICTED } from "../../../shared/constants/keyAccess.js"
 
 let SQL_LIB = null;
 
-async function getSqlLib() {
+async function getSqlJsLib() {
   if (SQL_LIB) return SQL_LIB;
-  SQL_LIB = await initSqlJs();
-  return SQL_LIB;
+
+  // 1. Try inline wasm first (zero external file dependency, works anywhere)
+  try {
+    const inlineMod = await import("sql.js/dist/sql-wasm-inline.js");
+    const initFn = inlineMod.default || inlineMod;
+    SQL_LIB = await initFn();
+    return SQL_LIB;
+  } catch (_) {}
+
+  // 2. Try standard sql.js with locateFile looking in known runtime locations
+  try {
+    const standardMod = await import("sql.js");
+    const initFn = standardMod.default || standardMod;
+
+    const candidateDirs = [
+      path.join(os.homedir(), ".9router", "runtime", "node_modules", "sql.js", "dist"),
+      path.join(process.cwd(), "node_modules", "sql.js", "dist"),
+      path.join(process.cwd(), "app", "node_modules", "sql.js", "dist"),
+    ];
+
+    let foundWasmDir = null;
+    for (const dir of candidateDirs) {
+      if (fs.existsSync(path.join(dir, "sql-wasm.wasm"))) {
+        foundWasmDir = dir;
+        break;
+      }
+    }
+
+    const opts = foundWasmDir
+      ? { locateFile: (file) => path.join(foundWasmDir, file) }
+      : {};
+
+    SQL_LIB = await initFn(opts);
+    return SQL_LIB;
+  } catch (err) {
+    throw new Error(`Failed to initialize SQLite fallback: ${err.message}`);
+  }
 }
 
 /**
  * Builds a binary SQLite buffer from standard JSON database payload.
+ * Uses native node:sqlite when available, with fallback to sql.js.
  *
  * @param {Object} payload Database export payload
  * @returns {Promise<Buffer>} SQLite database binary buffer
@@ -23,23 +61,152 @@ export async function exportDbToSqliteBuffer(payload) {
     throw new Error("Invalid payload for SQLite export");
   }
 
-  const SQL = await getSqlLib();
+  // Attempt 1: Native node:sqlite (Node 22.5+, native C code, fast and no wasm needed)
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    const tmpPath = path.join(
+      os.tmpdir(),
+      `9r-export-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`
+    );
+
+    try {
+      const db = new DatabaseSync(tmpPath);
+      db.exec(PRAGMA_SQL);
+
+      for (const [name, def] of Object.entries(TABLES)) {
+        db.exec(buildCreateTableSql(name, def, "sqlite"));
+      }
+
+      if (payload.settings) {
+        db.prepare("INSERT INTO settings(id, data) VALUES(1, ?)").run(stringifyJson(payload.settings));
+      }
+
+      const insertConn = db.prepare(
+        `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const c of payload.providerConnections || []) {
+        const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+        insertConn.run(
+          id,
+          provider,
+          authType || "oauth",
+          name || null,
+          email || null,
+          priority || null,
+          isActive === false ? 0 : 1,
+          stringifyJson(rest),
+          createdAt || new Date().toISOString(),
+          updatedAt || new Date().toISOString()
+        );
+      }
+
+      const insertNode = db.prepare(
+        `INSERT INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`
+      );
+      for (const n of payload.providerNodes || []) {
+        const { id, type, name, createdAt, updatedAt, ...rest } = n;
+        insertNode.run(
+          id,
+          type || null,
+          name || null,
+          stringifyJson(rest),
+          createdAt || new Date().toISOString(),
+          updatedAt || new Date().toISOString()
+        );
+      }
+
+      const insertPool = db.prepare(
+        `INSERT INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`
+      );
+      for (const p of payload.proxyPools || []) {
+        const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
+        insertPool.run(
+          id,
+          isActive === false ? 0 : 1,
+          testStatus || "unknown",
+          stringifyJson(rest),
+          createdAt || new Date().toISOString(),
+          updatedAt || new Date().toISOString()
+        );
+      }
+
+      const insertKey = db.prepare(
+        `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const k of payload.apiKeys || []) {
+        const access = k.access || KEY_ACCESS_UNRESTRICTED;
+        const cols = keyAccessToColumns(access);
+        insertKey.run(
+          k.id,
+          k.key,
+          k.name || null,
+          k.machineId || null,
+          k.isActive === false ? 0 : 1,
+          k.createdAt || new Date().toISOString(),
+          cols.accessRestricted,
+          cols.accessAllow
+        );
+      }
+
+      const insertCombo = db.prepare(
+        `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`
+      );
+      for (const c of payload.combos || []) {
+        insertCombo.run(
+          c.id,
+          c.name,
+          c.kind || null,
+          stringifyJson(c.models || []),
+          c.createdAt || new Date().toISOString(),
+          c.updatedAt || new Date().toISOString()
+        );
+      }
+
+      const insertKv = db.prepare(`INSERT INTO kv(scope, key, value) VALUES(?, ?, ?)`);
+      for (const [a, m] of Object.entries(payload.modelAliases || {})) {
+        insertKv.run("modelAliases", a, stringifyJson(m));
+      }
+      for (const m of payload.customModels || []) {
+        const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
+        insertKv.run("customModels", k, stringifyJson(m));
+      }
+      for (const [tool, mappings] of Object.entries(payload.mitmAlias || {})) {
+        insertKv.run("mitmAlias", tool, stringifyJson(mappings || {}));
+      }
+      for (const [provider, models] of Object.entries(payload.pricing || {})) {
+        insertKv.run("pricing", provider, stringifyJson(models || {}));
+      }
+      for (const [provider, models] of Object.entries(payload.disabledModels || {})) {
+        insertKv.run("disabledModels", provider, stringifyJson(models || []));
+      }
+
+      db.close();
+      const buffer = fs.readFileSync(tmpPath);
+      return buffer;
+    } finally {
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+    }
+  } catch (_) {
+    // Fallback: sql.js
+  }
+
+  // Attempt 2: sql.js (pure JS / WebAssembly)
+  const SQL = await getSqlJsLib();
   const db = new SQL.Database();
 
   try {
     db.exec(PRAGMA_SQL);
 
-    // Create tables
     for (const [name, def] of Object.entries(TABLES)) {
       db.exec(buildCreateTableSql(name, def, "sqlite"));
     }
 
-    // Insert settings
     if (payload.settings) {
       db.run("INSERT INTO settings(id, data) VALUES(1, ?)", [stringifyJson(payload.settings)]);
     }
 
-    // Insert providerConnections
     for (const c of payload.providerConnections || []) {
       const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
       db.run(
@@ -60,7 +227,6 @@ export async function exportDbToSqliteBuffer(payload) {
       );
     }
 
-    // Insert providerNodes
     for (const n of payload.providerNodes || []) {
       const { id, type, name, createdAt, updatedAt, ...rest } = n;
       db.run(
@@ -76,7 +242,6 @@ export async function exportDbToSqliteBuffer(payload) {
       );
     }
 
-    // Insert proxyPools
     for (const p of payload.proxyPools || []) {
       const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
       db.run(
@@ -92,7 +257,6 @@ export async function exportDbToSqliteBuffer(payload) {
       );
     }
 
-    // Insert apiKeys
     for (const k of payload.apiKeys || []) {
       const access = k.access || KEY_ACCESS_UNRESTRICTED;
       const cols = keyAccessToColumns(access);
@@ -112,7 +276,6 @@ export async function exportDbToSqliteBuffer(payload) {
       );
     }
 
-    // Insert combos
     for (const c of payload.combos || []) {
       db.run(
         `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
@@ -127,7 +290,6 @@ export async function exportDbToSqliteBuffer(payload) {
       );
     }
 
-    // Insert kv
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {
       db.run(`INSERT INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [a, stringifyJson(m)]);
     }
@@ -154,6 +316,7 @@ export async function exportDbToSqliteBuffer(payload) {
 
 /**
  * Extracts standard JSON database payload from a SQLite binary buffer.
+ * Uses native node:sqlite when available, with fallback to sql.js.
  *
  * @param {Buffer|Uint8Array} sqliteBuffer
  * @returns {Promise<Object>} Database export payload
@@ -169,7 +332,160 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
     throw new Error("Invalid file format: not a SQLite database file");
   }
 
-  const SQL = await getSqlLib();
+  // Attempt 1: Native node:sqlite (Node 22.5+, native C code, fast and no wasm needed)
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    const tmpPath = path.join(
+      os.tmpdir(),
+      `9r-import-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`
+    );
+    fs.writeFileSync(tmpPath, u8);
+
+    try {
+      const db = new DatabaseSync(tmpPath);
+
+      function hasTable(tableName) {
+        try {
+          const row = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(tableName);
+          return Boolean(row);
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function queryRows(sql) {
+        try {
+          return db.prepare(sql).all();
+        } catch (e) {
+          console.warn("[DB][extractSqlite] query failed:", sql, e.message);
+          return [];
+        }
+      }
+
+      const out = {
+        settings: {},
+        providerConnections: [],
+        providerNodes: [],
+        proxyPools: [],
+        apiKeys: [],
+        combos: [],
+        modelAliases: {},
+        customModels: [],
+        mitmAlias: {},
+        pricing: {},
+        disabledModels: {},
+      };
+
+      if (hasTable("settings")) {
+        const rows = queryRows("SELECT data FROM settings WHERE id = 1");
+        if (rows.length > 0 && rows[0].data) {
+          out.settings = parseJson(rows[0].data, {}) || {};
+        }
+      }
+
+      if (hasTable("providerConnections")) {
+        const rows = queryRows("SELECT * FROM providerConnections");
+        out.providerConnections = rows.map((r) => {
+          const extra = parseJson(r.data, {}) || {};
+          return {
+            ...extra,
+            id: r.id,
+            provider: r.provider,
+            authType: r.authType,
+            name: r.name,
+            email: r.email,
+            priority: r.priority,
+            isActive: r.isActive === 1 || r.isActive === true || r.isActive === "1",
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+          };
+        });
+      }
+
+      if (hasTable("providerNodes")) {
+        const rows = queryRows("SELECT * FROM providerNodes");
+        out.providerNodes = rows.map((r) => {
+          const extra = parseJson(r.data, {}) || {};
+          return {
+            ...extra,
+            id: r.id,
+            type: r.type,
+            name: r.name,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+          };
+        });
+      }
+
+      if (hasTable("proxyPools")) {
+        const rows = queryRows("SELECT * FROM proxyPools");
+        out.proxyPools = rows.map((r) => {
+          const extra = parseJson(r.data, {}) || {};
+          return {
+            ...extra,
+            id: r.id,
+            isActive: r.isActive === 1 || r.isActive === true || r.isActive === "1",
+            testStatus: r.testStatus,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+          };
+        });
+      }
+
+      if (hasTable("apiKeys")) {
+        const rows = queryRows("SELECT * FROM apiKeys");
+        out.apiKeys = rows.map((r) => ({
+          id: r.id,
+          key: r.key,
+          name: r.name,
+          machineId: r.machineId,
+          isActive: r.isActive === 1 || r.isActive === true || r.isActive === "1",
+          createdAt: r.createdAt,
+          access: keyAccessFromColumns(r.accessRestricted, r.accessAllow),
+        }));
+      }
+
+      if (hasTable("combos")) {
+        const rows = queryRows("SELECT * FROM combos");
+        out.combos = rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          kind: r.kind,
+          models: parseJson(r.models, []) || [],
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        }));
+      }
+
+      if (hasTable("kv")) {
+        const rows = queryRows("SELECT scope, key, value FROM kv");
+        for (const r of rows) {
+          const val = parseJson(r.value);
+          if (r.scope === "modelAliases") {
+            out.modelAliases[r.key] = val;
+          } else if (r.scope === "customModels") {
+            if (val) out.customModels.push(val);
+          } else if (r.scope === "mitmAlias") {
+            out.mitmAlias[r.key] = val;
+          } else if (r.scope === "pricing") {
+            out.pricing[r.key] = val;
+          } else if (r.scope === "disabledModels") {
+            out.disabledModels[r.key] = Array.isArray(val) ? val : [];
+          }
+        }
+      }
+
+      db.close();
+      return out;
+    } finally {
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+    }
+  } catch (_) {
+    // Fallback: sql.js
+  }
+
+  // Attempt 2: sql.js (pure JS / WebAssembly)
+  const SQL = await getSqlJsLib();
   const db = new SQL.Database(u8);
 
   function tableExists(tableName) {
@@ -214,7 +530,6 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
       disabledModels: {},
     };
 
-    // Settings
     if (tableExists("settings")) {
       const rows = queryAll("SELECT data FROM settings WHERE id = 1");
       if (rows.length > 0 && rows[0].data) {
@@ -222,7 +537,6 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
       }
     }
 
-    // Provider connections
     if (tableExists("providerConnections")) {
       const rows = queryAll("SELECT * FROM providerConnections");
       out.providerConnections = rows.map((r) => {
@@ -242,7 +556,6 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
       });
     }
 
-    // Provider nodes
     if (tableExists("providerNodes")) {
       const rows = queryAll("SELECT * FROM providerNodes");
       out.providerNodes = rows.map((r) => {
@@ -258,7 +571,6 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
       });
     }
 
-    // Proxy pools
     if (tableExists("proxyPools")) {
       const rows = queryAll("SELECT * FROM proxyPools");
       out.proxyPools = rows.map((r) => {
@@ -274,7 +586,6 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
       });
     }
 
-    // API keys
     if (tableExists("apiKeys")) {
       const rows = queryAll("SELECT * FROM apiKeys");
       out.apiKeys = rows.map((r) => ({
@@ -288,7 +599,6 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
       }));
     }
 
-    // Combos
     if (tableExists("combos")) {
       const rows = queryAll("SELECT * FROM combos");
       out.combos = rows.map((r) => ({
@@ -301,7 +611,6 @@ export async function extractPayloadFromSqliteBuffer(sqliteBuffer) {
       }));
     }
 
-    // KV store
     if (tableExists("kv")) {
       const rows = queryAll("SELECT scope, key, value FROM kv");
       for (const r of rows) {

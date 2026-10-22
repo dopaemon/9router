@@ -79,7 +79,61 @@ export function extractUsageFromResponse(responseBody) {
   return null;
 }
 
+export function enrichRtkWithOutputSavings(rtk, completionTokens) {
+  if (
+    !rtk ||
+    !rtk.outputDirectives ||
+    !Array.isArray(rtk.outputDirectives) ||
+    rtk.outputDirectives.length === 0 ||
+    !completionTokens ||
+    completionTokens <= 0
+  ) {
+    return rtk;
+  }
+
+  const RATIOS = {
+    caveman: { lite: 0.30, full: 0.65, ultra: 0.75 },
+    ponytail: { lite: 0.20, full: 0.40, ultra: 0.60 },
+  };
+
+  let maxRatio = 0;
+  const directiveNames = [];
+  for (const dir of rtk.outputDirectives) {
+    const r = RATIOS[dir.type]?.[dir.level] || 0;
+    if (r > maxRatio) maxRatio = r;
+    directiveNames.push(`${dir.type}:${dir.level}`);
+  }
+
+  if (maxRatio <= 0) return rtk;
+
+  const outputTokensSaved = Math.round(completionTokens * (maxRatio / (1 - maxRatio)));
+  const outputBytesSaved = outputTokensSaved * 4;
+
+  const inputTokensSaved = rtk.inputTokensSavedEst ?? rtk.tokensSavedEst ?? 0;
+  const totalTokensSaved = inputTokensSaved + outputTokensSaved;
+  const totalBytesSaved = (rtk.bytesSaved || 0) + outputBytesSaved;
+  const totalBytesBefore = (rtk.bytesBefore || 0) + outputBytesSaved + (completionTokens * 4);
+  const totalBytesAfter = Math.max(0, totalBytesBefore - totalBytesSaved);
+  const savedPct = totalBytesBefore > 0 ? +((totalBytesSaved / totalBytesBefore) * 100).toFixed(1) : 0;
+
+  return {
+    ...rtk,
+    applied: true,
+    inputTokensSavedEst: inputTokensSaved,
+    outputTokensSavedEst: outputTokensSaved,
+    tokensSavedEst: totalTokensSaved,
+    bytesBefore: totalBytesBefore,
+    bytesAfter: totalBytesAfter,
+    bytesSaved: totalBytesSaved,
+    savedPct,
+    hits: (rtk.hits || 0) + directiveNames.length,
+    filters: Array.from(new Set([...(rtk.filters || []), ...directiveNames])),
+  };
+}
+
 export function buildRequestDetail(base, overrides = {}) {
+  const outTok = base.tokens?.completion_tokens ?? base.tokens?.output_tokens ?? 0;
+  const effectiveRtk = enrichRtkWithOutputSavings(base.rtk, outTok);
   return {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
@@ -92,7 +146,7 @@ export function buildRequestDetail(base, overrides = {}) {
     providerResponse: base.providerResponse || null,
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
-    rtk: base.rtk || undefined,
+    rtk: overrides.rtk !== undefined ? overrides.rtk : (effectiveRtk || undefined),
     status: base.status || "success",
     ...overrides
   };
@@ -103,6 +157,7 @@ export function formatDoneLine({ usage, latency, rtk }) {
   const u = usage || {};
   const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
   const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
+  const effectiveRtk = enrichRtkWithOutputSavings(rtk, outTok);
   const cacheRead = u.cache_read_input_tokens ?? u.cached_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0;
   const cacheCreate = u.cache_creation_input_tokens ?? 0;
   let inStr = `IN ${inTok}`;
@@ -116,7 +171,7 @@ export function formatDoneLine({ usage, latency, rtk }) {
   // Same marker as logUsage(): a count we guessed must not read like a
   // measured one.
   const estimatedStr = u.estimated ? " (estimated)" : "";
-  const rtkStr = rtk?.tokensSavedEst > 0 ? ` · RTK -${rtk.tokensSavedEst}tok (-${rtk.savedPct}%)` : "";
+  const rtkStr = effectiveRtk?.tokensSavedEst > 0 ? ` · RTK -${effectiveRtk.tokensSavedEst}tok (-${effectiveRtk.savedPct}%)` : "";
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}${estimatedStr}${rtkStr}`;
 }
 
@@ -127,6 +182,8 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
   const outTokens = tokens.output_tokens ?? tokens.completion_tokens ?? 0;
 
   if (inTokens === 0 && outTokens === 0) return;
+
+  const effectiveRtk = enrichRtkWithOutputSavings(rtk, outTokens);
 
   if (!silent) {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -149,6 +206,6 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
     endpoint: endpoint || null,
-    rtk: rtk || undefined,
+    rtk: effectiveRtk || undefined,
   }).catch(() => {});
 }
