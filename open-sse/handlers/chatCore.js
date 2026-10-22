@@ -26,8 +26,9 @@ import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog, getRtkSummary } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
-import { compressWithPxpipe } from "../rtk/pxpipe.js";
-import { getCapabilitiesForModel } from "../providers/capabilities.js";
+ import { compressWithPxpipe } from "../rtk/pxpipe.js";
+import { applyCompressionAsync } from "../services/compression/strategySelector.js";
+ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
@@ -60,7 +61,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides, compressionEnabled, compressionMode, compressionConfig, stackedPipeline }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -129,6 +130,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+
+  // OmniRoute compression pipeline (12 tiers: Session-Dedup, CCR, Lite, RTK, Responses Tool Output, Headroom, Relevance, Caveman, Aggressive, LLMLingua-2, Ultra, OmniGlyph)
+  const headerCompression = clientRawRequest?.headers?.["x-omniroute-compression"] || clientRawRequest?.headers?.["x-compression"];
+  const effectiveMode = headerCompression || (compressionEnabled ? (compressionMode || "stacked") : "off");
+  if (tokenSaverEnabled && effectiveMode !== "off") {
+    try {
+      const compResult = await applyCompressionAsync(body, effectiveMode, {
+        model,
+        stackedPipeline,
+        config: compressionConfig,
+      });
+      if (compResult?.compressed && compResult.body) {
+        body = compResult.body;
+        if (compResult.stats?.techniquesUsed?.length) {
+          log?.info?.("COMPRESSION", `[${effectiveMode}] saved ~${compResult.stats.savingsPercent}% via [${compResult.stats.techniquesUsed.join(", ")}]`);
+        }
+      }
+    } catch (e) {
+      log?.warn?.("COMPRESSION", `compression failed open: ${e?.message || e}`);
+    }
+  }
 
   // RTK compresses tool_result / tool content in the source body before translation
   // so all downstream translators (Gemini, Antigravity, Cursor, Claude, OpenAI)

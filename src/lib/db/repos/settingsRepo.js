@@ -69,6 +69,25 @@ export const DEFAULT_SETTINGS = {
   supabaseKeepAliveIntervalMinutes: 60,
   supabaseKeepAliveLastPingAt: null,
   supabaseKeepAliveLastStatus: null,
+  compressionEnabled: true,
+  compressionMode: "stacked",
+  stackedPipeline: [
+    { engine: "session-dedup" },
+    { engine: "lite" },
+    { engine: "rtk", intensity: "standard" },
+    { engine: "caveman", intensity: "full" },
+  ],
+  compressionConfig: {
+    enabled: true,
+    defaultMode: "stacked",
+    autoTriggerTokens: 0,
+    stackedPipeline: [
+      { engine: "session-dedup" },
+      { engine: "lite" },
+      { engine: "rtk", intensity: "standard" },
+      { engine: "caveman", intensity: "full" },
+    ],
+  },
 };
 
 async function readRaw() {

@@ -307,6 +307,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Lazily warms the in-process module on first use; null when not installed (fail-open)
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
+      compressionEnabled: chatSettings.compressionEnabled !== false,
+      compressionMode: chatSettings.compressionMode || "stacked",
+      compressionConfig: chatSettings.compressionConfig || {},
+      stackedPipeline: chatSettings.stackedPipeline || chatSettings.compressionConfig?.stackedPipeline || null,
       providerThinking,
       // Per-provider user overrides (custom headers / connect timeout) from settings
       providerOverrides: (chatSettings.providerOverrides || {})[provider] || null,

@@ -53,13 +53,81 @@ function initTray(options) {
   return initUnixTray(options);
 }
 
+let currentPkg = { name: "@dopaemon/9router", version: "0.5.135" };
+try {
+  currentPkg = require("../../../package.json");
+} catch (_) {
+  try {
+    currentPkg = require("../../../../package.json");
+  } catch (_) {}
+}
+
+let updateState = {
+  checking: false,
+  updating: false,
+  latestVersion: null,
+  hasUpdate: false
+};
+
+function compareSemver(a, b) {
+  if (!a || !b) return 0;
+  const pa = String(a).replace(/^v/, "").split(".").map(Number);
+  const pb = String(b).replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const na = Number.isFinite(pa[i]) ? pa[i] : 0;
+    const nb = Number.isFinite(pb[i]) ? pb[i] : 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
+function updateTrayItem(index, title, enabled, tooltip = "") {
+  if (!trayInstance) return;
+  if (isWinTray) {
+    try {
+      trayInstance.updateItem(index, title, enabled);
+    } catch (_) {}
+  } else {
+    try {
+      trayInstance.sendAction({
+        type: "update-item",
+        item: {
+          title,
+          tooltip: tooltip || title,
+          enabled
+        },
+        seq_id: index
+      });
+    } catch (_) {}
+  }
+}
+
 /**
  * Build menu items array shared between platforms
  */
-function buildMenuItems(port, autostartEnabled) {
+function buildMenuItems(port, autostartEnabled, updateInfo = updateState) {
+  const hasUpdate = Boolean(updateInfo?.hasUpdate && updateInfo?.latestVersion);
+  const checkTitle = hasUpdate
+    ? `Update Available: v${updateInfo.latestVersion}`
+    : "Check for Updates";
+  const updateNowTitle = hasUpdate
+    ? `⬆ Update Now (v${updateInfo.latestVersion})`
+    : "Update Now";
+
   return [
     { title: `9Router (Port ${port})`, tooltip: "Server is running", enabled: false },
     { title: "Open Dashboard", tooltip: "Open in browser", enabled: true },
+    {
+      title: checkTitle,
+      tooltip: hasUpdate ? `New version v${updateInfo.latestVersion} available` : "Check for new versions",
+      enabled: true
+    },
+    {
+      title: updateNowTitle,
+      tooltip: hasUpdate ? `Install v${updateInfo.latestVersion} and restart` : "No update available",
+      enabled: hasUpdate
+    },
     {
       title: autostartEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
       tooltip: "Run on OS startup",
@@ -70,7 +138,175 @@ function buildMenuItems(port, autostartEnabled) {
 }
 
 // Menu item indexes
-const MENU_INDEX = { STATUS: 0, DASHBOARD: 1, AUTOSTART: 2, QUIT: 3 };
+const MENU_INDEX = {
+  STATUS: 0,
+  DASHBOARD: 1,
+  CHECK_UPDATE: 2,
+  UPDATE_NOW: 3,
+  AUTOSTART: 4,
+  QUIT: 5
+};
+
+/**
+ * Check for newer CLI / server version
+ */
+function runCheckForUpdate(port) {
+  if (updateState.checking || updateState.updating) return;
+  updateState.checking = true;
+
+  updateTrayItem(MENU_INDEX.CHECK_UPDATE, "Checking for updates...", false);
+
+  const done = (info) => {
+    updateState.checking = false;
+    if (info && info.hasUpdate && info.latestVersion) {
+      updateState.hasUpdate = true;
+      updateState.latestVersion = info.latestVersion;
+      updateTrayItem(MENU_INDEX.CHECK_UPDATE, `Update Available: v${info.latestVersion}`, true);
+      updateTrayItem(MENU_INDEX.UPDATE_NOW, `⬆ Update Now (v${info.latestVersion})`, true);
+    } else if (info) {
+      updateState.hasUpdate = false;
+      updateState.latestVersion = null;
+      const current = info.currentVersion || currentPkg.version;
+      updateTrayItem(MENU_INDEX.CHECK_UPDATE, `✓ Up to date (v${current})`, true);
+      updateTrayItem(MENU_INDEX.UPDATE_NOW, "Update Now", false);
+    } else {
+      updateTrayItem(MENU_INDEX.CHECK_UPDATE, "Check for Updates (failed)", true);
+      updateTrayItem(MENU_INDEX.UPDATE_NOW, "Update Now", false);
+    }
+  };
+
+  // 1. Try local server API
+  const http = require("http");
+  const req = http.get(
+    `http://127.0.0.1:${port}/api/version`,
+    { timeout: 4000 },
+    (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (json && typeof json.latestVersion === "string") {
+            const hasUp = compareSemver(json.latestVersion, currentPkg.version) > 0;
+            done({
+              currentVersion: json.currentVersion || currentPkg.version,
+              latestVersion: json.latestVersion,
+              hasUpdate: hasUp
+            });
+            return;
+          }
+        } catch (_) {}
+        fallbackNpm();
+      });
+    }
+  );
+
+  req.on("error", () => fallbackNpm());
+  req.on("timeout", () => {
+    req.destroy();
+    fallbackNpm();
+  });
+
+  function fallbackNpm() {
+    const https = require("https");
+    const pkgName = currentPkg.name || "@dopaemon/9router";
+    const npmReq = https.get(
+      `https://registry.npmjs.org/${encodeURIComponent(pkgName)}/latest`,
+      { timeout: 5000 },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const latest = JSON.parse(data);
+            if (latest?.version) {
+              const hasUp = compareSemver(latest.version, currentPkg.version) > 0;
+              done({
+                currentVersion: currentPkg.version,
+                latestVersion: latest.version,
+                hasUpdate: hasUp
+              });
+              return;
+            }
+          } catch (_) {}
+          done(null);
+        });
+      }
+    );
+    npmReq.on("error", () => done(null));
+    npmReq.on("timeout", () => {
+      npmReq.destroy();
+      done(null);
+    });
+  }
+}
+
+/**
+ * Trigger update immediately
+ */
+function runUpdateNow(port, onQuit) {
+  if (updateState.updating || !updateState.latestVersion) return;
+  updateState.updating = true;
+
+  const targetVer = updateState.latestVersion;
+  updateTrayItem(MENU_INDEX.UPDATE_NOW, `⏳ Updating to v${targetVer}...`, false);
+  updateTrayItem(MENU_INDEX.CHECK_UPDATE, "Installing update...", false);
+  updateTrayItem(MENU_INDEX.STATUS, `9Router - Updating to v${targetVer}`, false);
+
+  const http = require("http");
+  const postData = JSON.stringify({});
+  const req = http.request(
+    {
+      hostname: "127.0.0.1",
+      port: port,
+      path: "/api/version/update",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(postData)
+      },
+      timeout: 6000
+    },
+    (res) => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        // App server accepted update and spawned detached updater
+        return;
+      }
+      fallbackDirectInstall();
+    }
+  );
+
+  req.on("error", () => fallbackDirectInstall());
+  req.on("timeout", () => {
+    req.destroy();
+    fallbackDirectInstall();
+  });
+  req.write(postData);
+  req.end();
+
+  function fallbackDirectInstall() {
+    const { spawn } = require("child_process");
+    const isWin = process.platform === "win32";
+    const npmCmd = isWin ? "npm.cmd" : "npm";
+    const pkgName = currentPkg.name || "@dopaemon/9router";
+
+    console.log(`\n⬆ Starting 9Router update to v${targetVer}...`);
+    const child = spawn(npmCmd, ["i", "-g", `${pkgName}@latest`, "--prefer-online"], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      shell: isWin
+    });
+    child.unref();
+
+    setTimeout(() => {
+      console.log("\n👋 Exiting for update to complete...");
+      if (onQuit) onQuit();
+      killTray();
+      setTimeout(() => process.exit(0), 500);
+    }, 1500);
+  }
+}
 
 /**
  * Get current autostart state
@@ -92,6 +328,10 @@ function handleClick(index, options, onAutostartToggle) {
   if (index === MENU_INDEX.DASHBOARD) {
     if (onOpenDashboard) onOpenDashboard();
     else openBrowser(`http://localhost:${port}/dashboard`);
+  } else if (index === MENU_INDEX.CHECK_UPDATE) {
+    runCheckForUpdate(port);
+  } else if (index === MENU_INDEX.UPDATE_NOW) {
+    runUpdateNow(port, onQuit);
   } else if (index === MENU_INDEX.AUTOSTART) {
     const enabled = getAutostartEnabled();
     try {
@@ -117,7 +357,7 @@ function initWindowsTray(options) {
     const { initWinTray } = require("./trayWin");
     const iconPath = path.join(__dirname, "icon.ico");
     const autostartEnabled = getAutostartEnabled();
-    const items = buildMenuItems(port, autostartEnabled);
+    const items = buildMenuItems(port, autostartEnabled, updateState);
 
     trayInstance = initWinTray({
       iconPath,
@@ -126,12 +366,13 @@ function initWindowsTray(options) {
       onClick: (index) => {
         handleClick(index, options, (newEnabled) => {
           const newTitle = newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start";
-          trayInstance.updateItem(MENU_INDEX.AUTOSTART, newTitle, true);
+          updateTrayItem(MENU_INDEX.AUTOSTART, newTitle, true);
         });
       }
     });
 
     isWinTray = true;
+    setTimeout(() => runCheckForUpdate(port), 2000);
     return trayInstance;
   } catch (err) {
     return null;
@@ -198,7 +439,7 @@ function initUnixTray(options) {
     chmodTrayBin(isV2 ? "systray2" : "systray");
 
     const autostartEnabled = getAutostartEnabled();
-    const items = buildMenuItems(port, autostartEnabled);
+    const items = buildMenuItems(port, autostartEnabled, updateState);
 
     const menu = {
       icon: getIconBase64(),
@@ -216,15 +457,8 @@ function initUnixTray(options) {
 
     trayInstance.onClick((action) => {
       handleClick(action.seq_id, options, (newEnabled) => {
-        trayInstance.sendAction({
-          type: "update-item",
-          item: {
-            title: newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
-            tooltip: "Run on OS startup",
-            enabled: true
-          },
-          seq_id: MENU_INDEX.AUTOSTART
-        });
+        const newTitle = newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start";
+        updateTrayItem(MENU_INDEX.AUTOSTART, newTitle, true);
       });
     });
 
@@ -240,6 +474,7 @@ function initUnixTray(options) {
       trayInstance.onError(() => {});
     }
 
+    setTimeout(() => runCheckForUpdate(port), 2000);
     return trayInstance;
   } catch (err) {
     process.stderr.write(`[9router] tray init error: ${err.message}\n`);
@@ -321,5 +556,10 @@ function openBrowser(url) {
 
 module.exports = {
   initTray,
-  killTray
+  killTray,
+  buildMenuItems,
+  MENU_INDEX,
+  compareSemver,
+  runCheckForUpdate,
+  runUpdateNow
 };

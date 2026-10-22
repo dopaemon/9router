@@ -1,0 +1,37 @@
+export default {
+  id: "requesty",
+  priority: 55,
+  alias: "requesty",
+  hasFree: true,
+  display: {
+    name: "Requesty",
+    icon: "alt_route",
+    color: "#9333EA",
+    textIcon: "RQ",
+    website: "https://requesty.ai",
+    notice: {
+      text: "Free tier ~200 requests/day - multi-model routing gateway with 300+ models.",
+      apiKeyUrl: "https://requesty.ai",
+    },
+  },
+  category: "freeTier",
+  authType: "apikey",
+  authModes: ["apikey"],
+  transport: {
+    baseUrl: "https://router.requesty.ai/v1/chat/completions",
+    validateUrl: "https://router.requesty.ai/v1/models",
+    thinkingFormat: "openai",
+  },
+  models: [
+    { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Requesty free)" },
+    { id: "nvidia/nemotron-3-nano-30b-a3b", name: "Nemotron 3 Nano 30B (Requesty free)" },
+    { id: "mistral/leanstral-1-5", name: "Leanstral 1.5 (Requesty free)" },
+    { id: "nvidia/nemotron-3-ultra", name: "Nemotron 3" },
+    { id: "deepseek/deepseek-chat", name: "DeepSeek V3" },
+    { id: "deepseek/deepseek-r1", name: "DeepSeek R1" },
+    { id: "qwen/qwen-2.5-coder-32b", name: "Qwen 2.5 Coder 32B" },
+    { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
+  ],
+  modelsFetcher: { url: "https://router.requesty.ai/v1/models", type: "openai" },
+  passthroughModels: true,
+};

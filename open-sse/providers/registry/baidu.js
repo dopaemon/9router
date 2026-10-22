@@ -22,6 +22,9 @@ export default {
     validateUrl: "https://qianfan.baidubce.com/v2/models",
   },
   models: [
+    { id: "ernie-4.0-turbo-8k", name: "ERNIE 4.0 Turbo", contextLength: 8192 },
+    { id: "ernie-4.0-8k", name: "ERNIE 4.0", contextLength: 8192 },
+    { id: "ernie-speed-128k", name: "ERNIE Speed 128K", contextLength: 131072 },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextLength: 1048576 },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextLength: 1048576 },
     { id: "glm-5.2", name: "GLM 5.2", contextLength: 512000 },

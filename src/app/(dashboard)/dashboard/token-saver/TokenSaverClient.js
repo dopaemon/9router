@@ -59,6 +59,12 @@ export default function TokenSaverClient() {
   const [pxpipeActionLoading, setPxpipeActionLoading] = useState(false);
   const [pxpipeActionError, setPxpipeActionError] = useState("");
   const [locale, setLocale] = useState("en");
+  const [compressionEnabled, setCompressionEnabled] = useState(true);
+  const [compressionMode, setCompressionMode] = useState("stacked");
+  const [engines, setEngines] = useState([]);
+  const [previewText, setPreviewText] = useState("");
+  const [previewResult, setPreviewResult] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -435,11 +441,65 @@ export default function TokenSaverClient() {
           refreshHeadroomStatus();
           // PRD: run the PXPIPE health check automatically when the page opens
           refreshPxpipeStatus().then(runPxpipeHealth);
+          if (data.compressionEnabled !== undefined) setCompressionEnabled(data.compressionEnabled !== false);
+          if (data.compressionMode) setCompressionMode(data.compressionMode);
+        }
+        const compRes = await fetch("/api/settings/compression");
+        if (compRes.ok) {
+          const compData = await compRes.json();
+          setCompressionEnabled(compData.enabled !== false);
+          if (compData.mode) setCompressionMode(compData.mode);
+        }
+        const engRes = await fetch("/api/compression/engines");
+        if (engRes.ok) {
+          const engData = await engRes.json();
+          setEngines(engData.engines || []);
         }
       } catch {}
     };
     loadSettings();
   }, [refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
+
+  const handleCompressionEnabledChange = async (val) => {
+    setCompressionEnabled(val);
+    try {
+      await fetch("/api/settings/compression", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: val }),
+      });
+    } catch {}
+  };
+
+  const handleCompressionModeChange = async (mode) => {
+    setCompressionMode(mode);
+    try {
+      await fetch("/api/settings/compression", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+    } catch {}
+  };
+
+  const handleRunPreview = async () => {
+    if (!previewText.trim()) return;
+    setPreviewLoading(true);
+    setPreviewResult(null);
+    try {
+      const res = await fetch("/api/compression/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: compressionMode, text: previewText }),
+      });
+      const data = await res.json();
+      setPreviewResult(data);
+    } catch (e) {
+      setPreviewResult({ error: e.message });
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   const headroomRunning = !!headroomStatus.running;
   const headroomStatusLabel = headroomStatus.loading
@@ -787,6 +847,135 @@ export default function TokenSaverClient() {
           />
         </div>
         )}
+      </Card>
+
+      <Card id="omniroute-compression">
+        <div className="flex items-center justify-between pb-4 border-b border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary">layers</span>
+              <h2 className="text-lg font-semibold">OmniRoute 12-Tier Compression</h2>
+              <a
+                href="https://github.com/cheaper-inference/OmniRoute"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary underline hover:opacity-80 ml-2"
+              >
+                cheaper-inference/OmniRoute
+              </a>
+            </div>
+            <p className="text-sm text-text-muted mt-1">
+              Unified multi-engine pipeline: Session-Dedup, CCR, Lite, RTK, Responses Tool Output, Headroom, Relevance, Caveman, Aggressive, LLMLingua-2, Ultra &amp; OmniGlyph.
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-text-muted">Mode:</span>
+              <select
+                value={compressionMode}
+                onChange={(e) => handleCompressionModeChange(e.target.value)}
+                className="text-xs rounded border border-border bg-surface px-2 py-1 text-text-main"
+              >
+                <option value="stacked">Stacked (Recommended)</option>
+                <option value="lite">Lite (~15%)</option>
+                <option value="standard">Standard / Caveman (~30%)</option>
+                <option value="rtk">RTK (60-90%)</option>
+                <option value="codex-responses">Responses Tool Output</option>
+                <option value="aggressive">Aggressive (~50%)</option>
+                <option value="ultra">Ultra (~75%)</option>
+                <option value="omniglyph">OmniGlyph (Vision)</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+            <Toggle
+              checked={compressionEnabled}
+              onChange={() => handleCompressionEnabledChange(!compressionEnabled)}
+            />
+          </div>
+        </div>
+
+        {/* 12 Engines Catalog Grid */}
+        <div className="py-4 border-b border-border">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-3">
+            Engine Catalog (12 Layers)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {engines.map((eng, idx) => (
+              <div
+                key={eng.id || idx}
+                className="p-3 rounded-lg border border-border bg-bg-subtle/50 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-xs text-text-main flex items-center gap-1.5">
+                      <span className="text-[10px] w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
+                        {idx + 1}
+                      </span>
+                      {eng.label || eng.name || eng.id}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface border border-border text-text-muted">
+                      pri: {eng.stackPriority}
+                    </span>
+                  </div>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    {eng.description}
+                  </p>
+                </div>
+                {eng.guidance?.tradeoffs && (
+                  <div className="mt-2 pt-2 border-t border-border/50 text-[10px] text-text-muted/80">
+                    {eng.guidance.tradeoffs}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Preview / Tester */}
+        <div className="pt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
+            Live Compression Preview
+          </h3>
+          <div className="flex flex-col gap-2">
+            <textarea
+              value={previewText}
+              onChange={(e) => setPreviewText(e.target.value)}
+              placeholder="Paste sample tool logs, code, or prompt to test compression..."
+              rows={3}
+              className="w-full text-xs font-mono p-2.5 rounded border border-border bg-surface text-text-main resize-y focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <div className="flex items-center justify-between">
+              <Button
+                size="sm"
+                onClick={handleRunPreview}
+                disabled={previewLoading || !previewText.trim()}
+              >
+                {previewLoading ? "Testing…" : "Test Compression"}
+              </Button>
+              {previewResult && (
+                <div className="text-xs flex items-center gap-3">
+                  {previewResult.error ? (
+                    <span className="text-error">{previewResult.error}</span>
+                  ) : (
+                    <>
+                      <span className="text-success font-medium">
+                        Saved: {previewResult.stats?.savingsPercent ?? 0}%
+                      </span>
+                      <span className="text-text-muted">
+                        Tokens: {previewResult.stats?.originalTokens} → {previewResult.stats?.compressedTokens}
+                      </span>
+                      {previewResult.stats?.techniquesUsed?.length > 0 && (
+                        <span className="text-text-muted/80 text-[10px]">
+                          [{previewResult.stats.techniquesUsed.join(", ")}]
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </Card>
 
       <Modal

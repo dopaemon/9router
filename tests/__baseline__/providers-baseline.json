@@ -239,7 +239,12 @@
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    "clientVersion": "3.12.17"
+    "clientVersion": "3.12.17",
+    "usage": {
+      "url": "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+      "planInfoUrl": "https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo",
+      "authUsageUrl": "https://api2.cursor.sh/auth/usage"
+    }
   },
   "deepgram": {
     "baseUrl": "https://api.deepgram.com/v1/listen",
@@ -832,6 +837,9 @@
     },
     "forceStream": true,
     "noAuth": true,
+    "reasoningInject": {
+      "scope": "all"
+    },
     "quirks": {
       "forceAutoToolChoiceModels": [
         "muse-spark-1.3-contributor-free"
@@ -1237,5 +1245,17 @@
     },
     "clientId": "hermes-cli",
     "tokenUrl": "https://portal.nousresearch.com/api/oauth/token"
+  },
+  "requesty": {
+    "baseUrl": "https://router.requesty.ai/v1/chat/completions",
+    "validateUrl": "https://router.requesty.ai/v1/models",
+    "thinkingFormat": "openai",
+    "format": "openai"
+  },
+  "pollinations": {
+    "baseUrl": "https://gen.pollinations.ai/v1/chat/completions",
+    "validateUrl": "https://gen.pollinations.ai/v1/models",
+    "thinkingFormat": "openai",
+    "format": "openai"
   }
 }
