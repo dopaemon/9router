@@ -515,7 +515,11 @@ export default function TokenSaverClient() {
   const headroomCanStart = !!headroomStatus.canStart;
   const headroomManaged =
     headroomLocalUrl && !!headroomStatus.managedPid;
-
+  const headroomChipClass = headroomRunning
+    ? "bg-success/15 text-success"
+    : headroomStatus.localUrl !== false && !headroomStatus.installed
+    ? "bg-text-muted/15 text-text-muted"
+    : "bg-warning/15 text-warning";
   const pxpipeHealthy = pxpipeHealth?.healthy === true;
   const pxpipeStatusLabel = pxpipeStatus.loading
     ? "Checking…"
