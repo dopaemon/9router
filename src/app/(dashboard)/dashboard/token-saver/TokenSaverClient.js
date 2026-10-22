@@ -655,21 +655,22 @@ export default function TokenSaverClient() {
                   <div className="flex items-center gap-1.5">
                     {visibleCavemanLevels.map((lvl) => (
                       <button
-                        key={lvl}
+                        key={lvl.id}
                         type="button"
-                        onClick={() => handleCavemanLevel(lvl)}
+                        onClick={() => handleCavemanLevel(lvl.id)}
                         className={`text-xs px-2.5 py-1 rounded transition-colors ${
-                          cavemanLevel === lvl
+                          cavemanLevel === lvl.id
                             ? "bg-primary text-primary-fg font-medium"
                             : "bg-surface text-text-muted hover:text-text-main hover:bg-surface-2 border border-border"
                         }`}
+                        title={lvl.desc}
                       >
-                        {CAVEMAN_LEVEL_LABELS[lvl] || lvl}
+                        {lvl.label}
                       </button>
                     ))}
                   </div>
                   <span className="text-[10px] text-primary">
-                    {CAVEMAN_LEVEL_DESCRIPTIONS[cavemanLevel] || ""}
+                    {visibleCavemanLevels.find((lvl) => lvl.id === cavemanLevel)?.desc || ""}
                   </span>
                 </div>
               )}
@@ -704,21 +705,22 @@ export default function TokenSaverClient() {
                   <div className="flex items-center gap-1.5">
                     {PONYTAIL_LEVELS.map((lvl) => (
                       <button
-                        key={lvl}
+                        key={lvl.id}
                         type="button"
-                        onClick={() => handlePonytailLevel(lvl)}
+                        onClick={() => handlePonytailLevel(lvl.id)}
                         className={`text-xs px-2.5 py-1 rounded transition-colors ${
-                          ponytailLevel === lvl
+                          ponytailLevel === lvl.id
                             ? "bg-primary text-primary-fg font-medium"
                             : "bg-surface text-text-muted hover:text-text-main hover:bg-surface-2 border border-border"
                         }`}
+                        title={lvl.desc}
                       >
-                        {PONYTAIL_LEVEL_LABELS[lvl] || lvl}
+                        {lvl.label}
                       </button>
                     ))}
                   </div>
                   <span className="text-[10px] text-primary">
-                    {PONYTAIL_LEVEL_DESCRIPTIONS[ponytailLevel] || ""}
+                    {PONYTAIL_LEVELS.find((lvl) => lvl.id === ponytailLevel)?.desc || ""}
                   </span>
                 </div>
               )}
