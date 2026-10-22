@@ -45,6 +45,7 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [ponytailPromptOverride, setPonytailPromptOverride] = useState("");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -360,6 +361,11 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handlePonytailPromptOverride = (value) => {
+    setPonytailPromptOverride(value);
+    patchSetting({ ponytailPromptOverride: value });
+  };
+
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
     try {
@@ -436,6 +442,7 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setPonytailPromptOverride(data.ponytailPromptOverride || "");
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
@@ -730,6 +737,24 @@ export default function TokenSaverClient() {
               />
             </div>
           </div>
+          {ponytailEnabled && (
+            <div className="pt-3 mt-3 border-t border-border/50">
+              <label className="text-xs font-medium text-text-main" htmlFor="ponytail-override">
+                Custom prompt (optional)
+              </label>
+              <p className="text-[11px] text-text-muted mb-2">
+                Pins your own doctrine text instead of the built-in level prompt. Leave empty to use the built-in text.
+              </p>
+              <textarea
+                id="ponytail-override"
+                value={ponytailPromptOverride}
+                onChange={(e) => handlePonytailPromptOverride(e.target.value)}
+                rows={3}
+                placeholder="Paste a custom Ponytail doctrine prompt here..."
+                className="w-full rounded border border-border bg-surface p-2 text-xs font-mono text-text-main focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          )}
 
           {/* Optional Headroom Python Sidecar */}
           <div className="flex items-center justify-between pt-3 border-t border-border/50 gap-4 flex-wrap">
@@ -809,6 +834,7 @@ export default function TokenSaverClient() {
             </div>
           </div>
         </div>
+
       </Card>
 
       <Modal
