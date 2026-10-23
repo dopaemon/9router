@@ -26,22 +26,21 @@ export default function AnimatedNumber({
   const target = Number.isFinite(Number(value)) ? Number(value) : 0;
   const fmt = format || ((n) => new Intl.NumberFormat().format(n));
   const [display, setDisplay] = useState(target);
-  const fromRef = useRef(target);
+  const displayRef = useRef(target);
   const rafRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    const delta = Math.abs(target - fromRef.current);
-    if (reduced || duration <= 0 || (snapAfter > 0 && delta > snapAfter)) {
-      fromRef.current = target;
-      // Jump the digits in the next frame instead of during the effect body:
-      // react-hooks/set-state-in-effect, and a rAF keeps the paint in sync.
+    const from = displayRef.current;
+    const delta = Math.abs(target - from);
+
+    if (reduced || duration <= 0 || (snapAfter > 0 && delta > snapAfter) || delta === 0) {
+      displayRef.current = target;
       const settle = requestAnimationFrame(() => setDisplay(target));
       return () => cancelAnimationFrame(settle);
     }
 
-    const from = fromRef.current;
     const startedAt = performance.now();
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
@@ -49,18 +48,19 @@ export default function AnimatedNumber({
       const t = Math.min(1, (now - startedAt) / duration);
       // easeOutCubic: fast start, settles softly on the final digit
       const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(from + (target - from) * eased);
+      const current = from + (target - from) * eased;
+      displayRef.current = current;
+      setDisplay(current);
       if (t < 1) {
         rafRef.current = requestAnimationFrame(tick);
       } else {
-        fromRef.current = target;
+        displayRef.current = target;
       }
     };
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      fromRef.current = target;
     };
   }, [target, duration, snapAfter]);
 

@@ -14,14 +14,12 @@ const PERIODS = [
   { value: "60d", label: "60D" },
   { value: "all", label: "All" },
 ];
-
 const INTERVAL_OPTIONS = [
+  { value: 0, label: "Realtime" },
   { value: 1000, label: "1s" },
   { value: 1500, label: "1.5s" },
   { value: 2000, label: "2s" },
-  { value: 2500, label: "2.5s" },
   { value: 3000, label: "3s" },
-  { value: 4000, label: "4s" },
   { value: 5000, label: "5s" },
 ];
 
@@ -43,7 +41,7 @@ function LiveModeSelector({ liveMode, onToggle, liveInterval, onIntervalChange }
     };
   }, [dropdownOpen]);
 
-  const currentLabel = INTERVAL_OPTIONS.find((i) => i.value === liveInterval)?.label || `${liveInterval / 1000}s`;
+  const currentLabel = INTERVAL_OPTIONS.find((i) => i.value === liveInterval)?.label || (liveInterval === 0 ? "Realtime" : `${liveInterval / 1000}s`);
 
   return (
     <div className="relative inline-flex items-center" ref={dropdownRef}>
@@ -132,7 +130,7 @@ function UsageContent() {
 
   const [period, setPeriod] = useState("today");
   const [liveMode, setLiveMode] = useState(false);
-  const [liveInterval, setLiveInterval] = useState(1000);
+  const [liveInterval, setLiveInterval] = useState(0);
 
   useEffect(() => {
     try {
@@ -141,7 +139,7 @@ function UsageContent() {
       const savedInterval = localStorage.getItem("9router_usage_live_interval");
       if (savedInterval) {
         const num = Number(savedInterval);
-        if ([1000, 1500, 2000, 2500, 3000, 4000, 5000].includes(num)) {
+        if ([0, 1000, 1500, 2000, 2500, 3000, 4000, 5000].includes(num)) {
           setLiveInterval(num);
         }
       }

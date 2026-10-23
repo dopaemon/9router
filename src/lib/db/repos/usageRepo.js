@@ -37,7 +37,7 @@ const statsEmitTimers = global._statsEmitTimers;
 
 export const statsEmitter = global._statsEmitter;
 
-function scheduleStatsEvent(event, delayMs = 150) {
+function scheduleStatsEvent(event, delayMs = 50) {
   const key = event === "update" ? "update" : "pending";
   if (statsEmitTimers[key]) return;
   statsEmitTimers[key] = setTimeout(() => {
@@ -318,7 +318,7 @@ export async function saveRequestUsage(entry) {
 
     if (inserted) {
       pushToRing(entry);
-      scheduleStatsEvent("update", 250);
+    scheduleStatsEvent("update", 50);
     }
   } catch (e) {
     console.error("Failed to save usage stats:", e);

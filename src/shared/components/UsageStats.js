@@ -65,8 +65,9 @@ function RecentRequests({ requests = [] }) {
             <tbody className="divide-y divide-border/50">
               {requests.map((r, i) => {
                 const ok = !r.status || r.status === "ok" || r.status === "success";
-                return (
-                  <tr key={i} className="hover:bg-bg-subtle transition-colors">
+            const rowKey = r.id || `${r.timestamp || ""}-${r.model || ""}-${r.promptTokens || 0}-${r.completionTokens || 0}-${i}`;
+            return (
+              <tr key={rowKey} className="hover:bg-bg-subtle transition-colors">
                     <td className="py-1.5">
                       <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
                     </td>
@@ -314,9 +315,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   // climb while requests are in flight.
   useEffect(() => {
     if (!liveMode) return undefined;
-    const intervalMs = Math.max(500, Number(liveInterval) || 1000);
+    const intervalVal = Number(liveInterval);
+    // When liveInterval is 0 ("Realtime"), polling is disabled — SSE provides instant real-time pushes
+    if (intervalVal <= 0) return undefined;
+    const intervalMs = Math.max(500, intervalVal);
     let cancelled = false;
-
     const pull = async () => {
       if (cancelled || (typeof document !== "undefined" && document.hidden)) return;
       const controller = new AbortController();
