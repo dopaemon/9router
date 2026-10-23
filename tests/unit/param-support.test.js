@@ -160,7 +160,6 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.text).toBeUndefined();
   });
-
   it("renames max_tokens to max_completion_tokens for the openai provider", () => {
     const body = { max_tokens: 50, temperature: 1 };
 

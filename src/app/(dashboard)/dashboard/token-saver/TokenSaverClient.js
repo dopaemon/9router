@@ -46,6 +46,8 @@ export default function TokenSaverClient() {
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [ponytailPromptOverride, setPonytailPromptOverride] = useState("");
+  const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -366,6 +368,15 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailPromptOverride: value });
   };
 
+  const handleCustomPromptEnabled = (value) => {
+    setCustomPromptEnabled(value);
+    patchSetting({ customPromptEnabled: value });
+  };
+
+  const handleCustomPromptBlur = () => {
+    patchSetting({ customPrompt });
+  };
+
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
     try {
@@ -442,7 +453,9 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
-          setPonytailPromptOverride(data.ponytailPromptOverride || "");
+    setPonytailPromptOverride(data.ponytailPromptOverride || "");
+    setCustomPromptEnabled(!!data.customPromptEnabled);
+    setCustomPrompt(data.customPrompt || "");
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
@@ -834,7 +847,28 @@ export default function TokenSaverClient() {
             </div>
           </div>
         </div>
-
+        {/* Custom system prompt */}
+        <div className="pt-4 mt-4 border-t border-border">
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-2">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sm">Custom system prompt</p>
+              <p className="text-xs text-text-muted">
+                Injected into every request across OpenAI, Responses, Claude, Gemini, and Kiro formats.
+              </p>
+            </div>
+            <Toggle checked={customPromptEnabled} onChange={handleCustomPromptEnabled} />
+          </div>
+          {customPromptEnabled && (
+            <textarea
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              onBlur={handleCustomPromptBlur}
+              placeholder="e.g., Reply in Vietnamese. Keep answers concise."
+              rows={3}
+              className="w-full text-xs font-mono bg-surface border border-border rounded p-2 text-text-main placeholder:text-text-muted/60 focus:outline-none focus:border-primary"
+            />
+          )}
+        </div>
       </Card>
 
       <Modal

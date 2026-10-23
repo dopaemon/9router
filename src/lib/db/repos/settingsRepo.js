@@ -61,6 +61,9 @@ export const DEFAULT_SETTINGS = {
   // User-supplied doctrine text for the Ponytail injector ("" = built-in prompts).
   // Set it to pin a specific upstream release without waiting for a gateway release.
   ponytailPromptOverride: "",
+  // User-authored system prompt, injected independently of the built-in savers.
+  customPromptEnabled: false,
+  customPrompt: "",
   pxpipeEnabled: false,
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,

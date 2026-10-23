@@ -76,7 +76,6 @@ export function getPostgresUrl() {
   const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || "";
   return url.trim() || null;
 }
-
 /**
  * Make every bound string NUL-safe, once, for all drivers.
  *
