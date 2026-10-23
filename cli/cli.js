@@ -856,30 +856,39 @@ function startServer(updatePromise) {
           const { startTerminalUI } = require("./src/cli/terminalUI");
           await startTerminalUI(port);
           // Loop continues, show menu again
-        } else if (choice === "hide") {
-          const { clearScreen } = require("./src/cli/utils/display");
-          clearScreen();
+      } else if (choice === "hide") {
+        const { clearScreen } = require("./src/cli/utils/display");
+        clearScreen();
 
-          // Enable auto startup on OS boot
-          try {
-            const { enableAutoStart } = require("./src/cli/tray/autostart");
-            enableAutoStart(__filename);
-          } catch (e) { }
+        if (process.platform === "darwin") {
+          // macOS: keep current process alive (already owns the login session with tray icon visible).
+          // Ignore SIGHUP and SIGTERM so closing the terminal does not terminate the background tray server.
+          process.removeAllListeners("SIGHUP");
+          process.on("SIGHUP", () => {});
+          process.removeAllListeners("SIGTERM");
+          process.on("SIGTERM", () => {});
 
-          if (process.platform === "darwin") {
-            // macOS: keep current process alive — spawning a detached child puts
-            // it outside the login session so NSStatusItem silently fails.
-            process.removeAllListeners("SIGHUP");
-            process.on("SIGHUP", () => {});
-
-            console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-            console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
-            console.log(`   Server: http://${displayHost}:${port}`);
-            console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
-
-            // Tray already init'd at startup — just keep event loop alive.
-            return;
+          // Release stdin from raw terminal mode so closing the terminal does not trigger EIO
+          if (process.stdin.isTTY) {
+            try { process.stdin.setRawMode(false); } catch (e) {}
           }
+          try {
+            process.stdin.pause();
+            process.stdin.unref();
+          } catch (e) {}
+
+          // Suppress EPIPE/EIO if terminal pty is destroyed
+          if (process.stdout) process.stdout.on("error", () => {});
+          if (process.stderr) process.stderr.on("error", () => {});
+
+          console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
+          console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
+          console.log(`   Server: http://${displayHost}:${port}`);
+          console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
+
+          // Tray already init'd at startup — just keep event loop alive.
+          return;
+        }
 
           // Windows/Linux: spawn detached bgProcess (systray works fine in child)
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
