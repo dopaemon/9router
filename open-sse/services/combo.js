@@ -7,7 +7,6 @@ import { parseModel } from "./model.js";
 import { SPEED_MODE, getSpeedMode, getModelSpeed, markModelProbed, wasProbedRecently } from "./modelSpeed.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
-import { parseModel } from "./model.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
 import {
