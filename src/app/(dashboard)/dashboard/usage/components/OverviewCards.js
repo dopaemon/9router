@@ -6,11 +6,15 @@ import AnimatedNumber from "@/shared/components/AnimatedNumber";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
 const fmtPlus = (n) => `+${new Intl.NumberFormat().format(n || 0)}`;
-const fmtCost = (n) => `~$${(n || 0).toFixed(2)}`;
+const costFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+});
+const fmtCost = (n) => costFormatter.format(Number(n) || 0);
 
-// Cost moves in cents, so animating it digit-by-digit reads as noise; snap it
-// and animate only the integer counters (requests / tokens).
-const COST_SNAP = 0.005;
+const COST_SNAP = 50;
 const TOKEN_SNAP = 2_000_000;
 
 const CARD = "flex min-w-0 flex-col items-center text-center gap-1 px-3 py-3 sm:px-4";

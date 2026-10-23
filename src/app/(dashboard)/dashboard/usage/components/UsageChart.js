@@ -19,7 +19,13 @@ const fmtTokens = (n) => {
   return String(n || 0);
 };
 
-const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
+const costFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+});
+const fmtCost = (n) => costFormatter.format(Number(n) || 0);
 const fmtRequests = (n) => String(n || 0);
 
 const VIEW_MODES = [
