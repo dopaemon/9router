@@ -370,9 +370,7 @@ function initWindowsTray(options) {
         });
       }
     });
-
     isWinTray = true;
-    setTimeout(() => runCheckForUpdate(port), 2000);
     return trayInstance;
   } catch (err) {
     return null;
@@ -454,9 +452,10 @@ function initUnixTray(options) {
 
     trayInstance = new SysTray({ menu, debug: false, copyDir: true });
     isWinTray = false;
-
     trayInstance.onClick((action) => {
-      handleClick(action.seq_id, options, (newEnabled) => {
+      const idx = typeof action?.seq_id === "number" ? action.seq_id : (action?.__id != null ? action.__id - 1 : -1);
+      if (idx < 0) return;
+      handleClick(idx, options, (newEnabled) => {
         const newTitle = newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start";
         updateTrayItem(MENU_INDEX.AUTOSTART, newTitle, true);
       });
@@ -473,8 +472,6 @@ function initUnixTray(options) {
       trayInstance.onReady(() => {});
       trayInstance.onError(() => {});
     }
-
-    setTimeout(() => runCheckForUpdate(port), 2000);
     return trayInstance;
   } catch (err) {
     process.stderr.write(`[9router] tray init error: ${err.message}\n`);
