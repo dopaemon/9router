@@ -12,14 +12,19 @@ export default {
     textIcon: "FB",
     website: "https://freebuff.com",
     notice: {
-      text: "Freebuff OpenAI-compatible API from Codebuff / Freebuff.",
+      text: "Freebuff AI gateway from Codebuff. Connect via OAuth for free tier models, or use a paid API key.",
       apiKeyUrl: "https://freebuff.com/account/api",
     },
   },
-  category: "apikey",
-  authType: "apikey",
-  authModes: ["apikey"],
+  category: "oauth",
+  authType: "oauth",
+  authModes: ["oauth", "apikey"],
+  hasOAuth: true,
   passthroughModels: true,
+  oauth: {
+    deviceCodeUrl: "https://freebuff.com/api/auth/cli/code",
+    pollUrl: "https://freebuff.com/api/auth/cli/status",
+  },
   transport: {
     baseUrl: "https://freebuff.com/api/v1/paid/chat/completions",
     validateUrl: "https://freebuff.com/api/v1/paid/models",

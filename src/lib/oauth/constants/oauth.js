@@ -235,6 +235,13 @@ export const NOUS_CONFIG = {
   scope: "inference:invoke inference:mint_agent_key",
 };
 
+// Freebuff OAuth Configuration (CLI / Device Code Flow)
+export const FREEBUFF_CONFIG = {
+  ...PROVIDER_OAUTH["freebuff"],
+  deviceCodeUrl: "https://freebuff.com/api/auth/cli/code",
+  pollUrl: "https://freebuff.com/api/auth/cli/status",
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -266,4 +273,5 @@ export const PROVIDERS = {
   GLM: "glm",
   ZED: "zed",
   NOUS: "nous",
+  FREEBUFF: "freebuff",
 };

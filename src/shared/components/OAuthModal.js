@@ -293,10 +293,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "grok-cli",
         "muse",
         "glm",
-        "minimax-code",
-        "minimax-code-global",
-        "nous",
-      ];
+    "minimax-code",
+    "minimax-code-global",
+    "nous",
+    "freebuff",
+  ];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");

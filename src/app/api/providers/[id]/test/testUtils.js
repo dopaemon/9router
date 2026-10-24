@@ -171,6 +171,12 @@ const OAUTH_TEST_CONFIG = {
     refreshable: true,
     useApiKey: true,
   },
+  freebuff: {
+    url: "https://codebuff.com/api/v1/me",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+  },
 };
 
 /**

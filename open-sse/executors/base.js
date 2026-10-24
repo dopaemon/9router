@@ -37,10 +37,13 @@ export class BaseExecutor {
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || ANTHROPIC_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      return `${normalized}/messages`;
-    }
-    const baseUrls = this.getBaseUrls();
-    return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+    return `${normalized}/messages`;
+  }
+  if (this.provider === "freebuff" && credentials?.accessToken) {
+    return credentials?.providerSpecificData?.baseUrl || "https://codebuff.com/api/v1/chat/completions";
+  }
+  const baseUrls = this.getBaseUrls();
+  return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
 
   buildHeaders(credentials, stream = true) {
