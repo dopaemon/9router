@@ -328,21 +328,20 @@ function killAllAppProcesses(appPort) {
             windowsHide: true,
             timeout: 5000
           });
-          const lines = output.split("\n").slice(1).filter(l => l.trim());
-          lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or OUR next-server.
-            // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline,
-            // and other Next.js apps (every Next server is titled "next-server").
-            const cmd = line.toLowerCase();
-            const match = line.match(/^"(\d+)"/);
-         const isOurInstall = !!match && (processRunsFrom(match[1], path.resolve(__dirname, ".."), { commandLine: line }) || processRunsFrom(match[1], APP_DIR, { commandLine: line }));
-          const isAppProcess =
-            (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")) && isOurInstall)
-            || (cmd.includes("next-server") && !!match && processRunsFrom(match[1], APP_DIR, { commandLine: line }));
-          if (isAppProcess) {
-            if (match && match[1] && match[1] !== process.pid.toString()) {
-              pids.push(match[1]);
-            }
+        lines.forEach(line => {
+          const cmd = line.toLowerCase();
+          if (!cmd.includes("9router") && !cmd.includes("next-server")) return;
+
+          const match = line.match(/^"(\d+)"/);
+          if (!match || !match[1] || match[1] === process.pid.toString()) return;
+          const pid = match[1];
+
+          const isNextServer = cmd.includes("next-server") && processRunsFrom(pid, APP_DIR, { commandLine: line });
+          const is9RouterNode = cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router"))
+            && (processRunsFrom(pid, path.resolve(__dirname, ".."), { commandLine: line }) || processRunsFrom(pid, APP_DIR, { commandLine: line }));
+
+          if (isNextServer || is9RouterNode) {
+            pids.push(pid);
           }
         });
       } catch (e) {
@@ -356,25 +355,22 @@ function killAllAppProcesses(appPort) {
           timeout: 5000
         });
         const lines = output.split('\n');
-
         lines.forEach(line => {
-          // Whitelist: real node process running 9router/cli.js, or OUR next-server.
-          // Avoids killing grep/strace/editors/cursor that incidentally match "9router",
-          // and other Next.js apps: every Next server is titled "next-server", so only one
-          // running from this install's app directory is ours.
           const cmd = line.toLowerCase();
+          if (!cmd.includes("9router") && !cmd.includes("next-server")) return;
+
           const parts = line.trim().split(/\s+/);
           const pid = parts[1];
-          const isOurInstall = pid && (processRunsFrom(pid, path.resolve(__dirname, "..")) || processRunsFrom(pid, APP_DIR));
-          const isAppProcess =
-            (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")) && isOurInstall)
-            || (cmd.includes("next-server") && processRunsFrom(pid, APP_DIR));
-        if (isAppProcess) {
-          if (pid && !isNaN(pid) && pid !== process.pid.toString()) {
+          if (!pid || isNaN(pid) || pid === process.pid.toString()) return;
+
+          const isNextServer = cmd.includes("next-server") && processRunsFrom(pid, APP_DIR);
+          const is9RouterNode = cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router"))
+            && (processRunsFrom(pid, path.resolve(__dirname, "..")) || processRunsFrom(pid, APP_DIR));
+
+          if (isNextServer || is9RouterNode) {
             pids.push(pid);
           }
-        }
-      });
+        });
     } catch (e) {
       // No processes found or error - continue
     }
@@ -517,53 +513,27 @@ function isRestrictedEnvironment() {
   return null;
 }
 
-// Check if new version available, return latest version or null
-function checkForUpdate() {
-  return new Promise((resolve) => {
-    if (skipUpdate) {
-      resolve(null);
-      return;
-    }
+async function checkForUpdate() {
+  if (skipUpdate) return null;
 
-    const spinner = createSpinner("Checking for updates...").start();
-    let resolved = false;
-
-    const safetyTimeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        spinner.stop();
-        resolve(null);
-      }
-    }, 8000);
-
-    const done = (version) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(safetyTimeout);
-      spinner.stop();
-      resolve(version);
-    };
-
-    const req = https.get(`https://registry.npmjs.org/${pkg.name}/latest`, { timeout: 3000 }, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try {
-          const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
-            done(latest.version);
-          } else {
-            done(null);
-          }
-        } catch (e) {
-          done(null);
-        }
-      });
+  const spinner = createSpinner("Checking for updates...").start();
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${pkg.name}/latest`, {
+      signal: AbortSignal.timeout(1500),
+      headers: { "Accept": "application/json" }
     });
-
-    req.on("error", () => done(null));
-    req.on("timeout", () => { req.destroy(); done(null); });
-  });
+    if (res.ok) {
+      const latest = await res.json();
+      if (latest?.version && compareVersions(latest.version, pkg.version) > 0) {
+        return latest.version;
+      }
+    }
+  } catch (_) {
+    // Timeout or network error - fail open without blocking
+  } finally {
+    spinner.stop();
+  }
+  return null;
 }
 
 // Open browser
@@ -858,22 +828,31 @@ function startServer(updatePromise) {
           // Start Terminal UI - it will return when user selects Back
           const { startTerminalUI } = require("./src/cli/terminalUI");
           await startTerminalUI(port);
-          // Loop continues, show menu again
+        // Loop continues, show menu again
       } else if (choice === "hide") {
         const { clearScreen } = require("./src/cli/utils/display");
         clearScreen();
-
-        // Enable auto startup on OS boot
-        try {
-          const { enableAutoStart } = require("./src/cli/tray/autostart");
-          enableAutoStart(__filename);
-        } catch (e) { }
 
         if (process.platform === "darwin") {
           // macOS: keep the current process alive — spawning a detached child puts
           // it outside the login session so NSStatusItem silently fails.
           process.removeAllListeners("SIGHUP");
           process.on("SIGHUP", () => {});
+          process.removeAllListeners("SIGTERM");
+          process.on("SIGTERM", () => {});
+
+          // Release stdin from raw terminal mode so closing the terminal does not trigger EIO
+          if (process.stdin.isTTY) {
+            try { process.stdin.setRawMode(false); } catch (e) {}
+          }
+          try {
+            process.stdin.pause();
+            process.stdin.unref();
+          } catch (e) {}
+
+          // Suppress EPIPE/EIO if terminal pty is destroyed
+          if (process.stdout) process.stdout.on("error", () => {});
+          if (process.stderr) process.stderr.on("error", () => {});
 
           console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
           console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
