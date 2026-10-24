@@ -1290,5 +1290,10 @@
     "baseUrl": "https://internal.chatuncensored.ai",
     "format": "openai",
     "authType": "cookie"
+  },
+  "freebuff": {
+    "baseUrl": "https://freebuff.com/api/v1/paid/chat/completions",
+    "validateUrl": "https://freebuff.com/api/v1/paid/models",
+    "format": "openai"
   }
 }
