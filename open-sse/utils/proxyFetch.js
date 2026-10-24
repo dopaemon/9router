@@ -1,6 +1,7 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG, ALLOW_INSECURE_TLS_FALLBACK } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { sanitizeHeaderValues } from "./headerSanitize.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
@@ -347,6 +348,9 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+  if (options?.headers) {
+    options = { ...options, headers: sanitizeHeaderValues(options.headers) };
+  }
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);

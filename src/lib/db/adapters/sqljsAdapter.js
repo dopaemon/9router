@@ -113,7 +113,14 @@ export async function createSqlJsAdapter(filePath) {
   function close() {
     if (saveTimer) clearTimeout(saveTimer);
     if (dirty) persist();
-    db.close();
+  db.close();
+  }
+
+  // Security state must reach disk before a logout can acknowledge success.
+  function flushNow() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
+    if (dirty) persist();
   }
 
   // Flush on shutdown
@@ -122,7 +129,6 @@ export async function createSqlJsAdapter(filePath) {
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);
 
-  const adapter = { driver: "sql.js", dialect: "sqlite", run, get, all, exec, transaction, listColumns, close, raw: db };
-
+  const adapter = { driver: "sql.js", dialect: "sqlite", run, get, all, exec, transaction, listColumns, flush: flushNow, close, raw: db };
   return adapter;
 }

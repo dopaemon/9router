@@ -11,6 +11,7 @@ import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS,
 import { selectNoAuthProviderIds } from "@/shared/utils/modelPickerProviders";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
+import { mergePassthroughModels } from "@/shared/utils/modelPickerModels";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -301,7 +302,11 @@ export default function ModelSelectModal({
         return;
       }
 
-      if (providerInfo.passthroughModels) {
+    if (providerInfo.passthroughModels) {
+      // Zed has no static catalog: its live models are fetched per account above.
+      // Merge them here too, because Zed is a passthrough provider and never reaches
+      // the live-model branch below.
+      const liveModels = providerId === "zed" ? zedModels : [];
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
@@ -338,13 +343,17 @@ export default function ModelSelectModal({
         } else {
           // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
           const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
-          const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
-          const hardcoded = getModelsByProviderId(providerId)
-            .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
-            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
-            .filter((m) => !seen.has(m.value));
-          combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
-        }
+      const hardcoded = getModelsByProviderId(providerId)
+        .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
+        .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, kind: "llm" }));
+      combined = mergePassthroughModels({
+        registered: registeredLlms,
+        aliases: aliasModels,
+        live: liveModels,
+        hardcoded,
+        alias,
+      });
+    }
 
         if (combined.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)

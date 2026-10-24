@@ -77,4 +77,18 @@ describe("ModelSelectModal LIVE_CATALOG_PROVIDERS includes zed (#4244)", () => {
     expect(src).toContain("zedModels");
     expect(src).toContain("zedConnectionIds");
   });
+
+  it("merges live Zed models inside the passthroughModels branch", () => {
+    // Zed has passthroughModels: true, so the non-passthrough else-branch below
+    // where zedModels was originally wired never runs. The live entries must be
+    // merged in the passthrough branch itself (#4244).
+    const start = src.indexOf("if (providerInfo.passthroughModels)");
+    const end = src.indexOf("} else if (isCustomProvider)", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const branch = src.slice(start, end);
+    expect(branch).toContain('const liveModels = providerId === "zed" ? zedModels : []');
+    expect(branch).toContain("mergePassthroughModels");
+    expect(branch).toContain("live: liveModels");
+  });
 });
