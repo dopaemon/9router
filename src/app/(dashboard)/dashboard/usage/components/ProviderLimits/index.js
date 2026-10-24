@@ -33,6 +33,7 @@ import {
   CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
+  PROVIDER_FILTER_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
   ACCOUNT_PAGE_SIZE_OPTIONS,
   ACCOUNT_PAGE_SIZE_MAX,
@@ -178,15 +179,50 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
-  // Initialize providerFilter from URL ?provider= param so the page
-  // can be bookmarked / deep-linked to a specific provider (#4217).
-  const [providerFilter, _setProviderFilter] = useState(
-    () => searchParams?.get("provider") || "all"
-  );
-  // Wrapper: keeps URL in sync with the selected provider so the view can be
-  // bookmarked. Replaces the URL without adding to browser history.
+  // Initialize providerFilter from URL ?provider= param, or fallback to cached selection in localStorage
+  const [providerFilter, _setProviderFilter] = useState(() => {
+    const urlParam = searchParams?.get("provider");
+    if (urlParam) return urlParam;
+    if (typeof window !== "undefined") {
+      try {
+        const stored = window.localStorage.getItem(PROVIDER_FILTER_STORAGE_KEY);
+        if (stored) return stored;
+      } catch (_) {}
+    }
+    return "all";
+  });
+
+  // Keep URL in sync on mount if restored from localStorage
+  useEffect(() => {
+    if (!searchParams?.get("provider") && providerFilter !== "all") {
+      try {
+        const params = new URLSearchParams(searchParams?.toString() || "");
+        params.set("provider", providerFilter);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      } catch (_) {}
+    }
+  }, []);
+
+  // Sync external searchParam changes to state and cache
+  useEffect(() => {
+    const urlProvider = searchParams?.get("provider");
+    if (urlProvider && urlProvider !== providerFilter) {
+      _setProviderFilter(urlProvider);
+      try {
+        window.localStorage.setItem(PROVIDER_FILTER_STORAGE_KEY, urlProvider);
+      } catch (_) {}
+    }
+  }, [searchParams, providerFilter]);
+
+  // Wrapper: keeps URL & localStorage in sync with the selected provider so the view can be
+  // bookmarked and remembered across reloads. Replaces the URL without adding to browser history.
   const setProviderFilter = useCallback((value) => {
     _setProviderFilter(value);
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(PROVIDER_FILTER_STORAGE_KEY, value);
+      }
+    } catch (_) {}
     try {
       const params = new URLSearchParams(searchParams?.toString() || "");
       if (value === "all") {

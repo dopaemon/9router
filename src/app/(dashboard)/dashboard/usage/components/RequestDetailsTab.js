@@ -113,11 +113,19 @@ export default function RequestDetailsTab() {
   const [providers, setProviders] = useState([]);
   const [models, setModels] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
-  const [filters, setFilters] = useState({
-    provider: "",
-    model: "",
-    startDate: "",
-    endDate: ""
+  const [filters, setFilters] = useState(() => {
+    let saved = "";
+    if (typeof window !== "undefined") {
+      try {
+        saved = window.localStorage.getItem("9r-usage-details-provider-filter") || "";
+      } catch (_) {}
+    }
+    return {
+      provider: saved,
+      model: "",
+      startDate: "",
+      endDate: ""
+    };
   });
 
   const fetchProviders = useCallback(async () => {
@@ -233,15 +241,23 @@ export default function RequestDetailsTab() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">Provider</label>
-            <select
-              id="provider-filter"
-              value={filters.provider}
-              onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
-              className={cn(
-                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
-                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
-                "w-full min-w-0 cursor-pointer"
-              )}
+          <select
+            id="provider-filter"
+            value={filters.provider}
+            onChange={(e) => {
+              const val = e.target.value;
+              try {
+                if (typeof window !== "undefined") {
+                  window.localStorage.setItem("9r-usage-details-provider-filter", val);
+                }
+              } catch (_) {}
+              setFilters({ ...filters, provider: val });
+            }}
+            className={cn(
+              "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
+              "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+              "w-full min-w-0 cursor-pointer"
+            )}
               style={{ colorScheme: 'auto' }}
             >
               <option value="">All Providers</option>
