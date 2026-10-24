@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { DATA_DIR } from "@/lib/dataDir";
 import { getSettings } from "@/lib/localDb";
 import { isDashboardSessionRevoked, revokeDashboardSession } from "@/lib/db/repos/dashboardSessionsRepo.js";
 
