@@ -41,6 +41,9 @@ const STRIP_RULES = [
   { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
   // NVIDIA API: text parameter not supported (uses OpenAI messages format)
   { provider: "nvidia", drop: ["text"] },
+  // DeepSeek documents only json_object; json_schema -> HTTP 400 "This response_format type is unavailable now".
+  // ponytail: schema is dropped, JSON mode kept. Upgrade path: inject the schema into the system prompt like applyJsonSchemaFallback.
+  { provider: "deepseek", downgradeResponseFormat: true },
   // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
   // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
   { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
@@ -72,6 +75,10 @@ export function stripUnsupportedParams(provider, model, body) {
     }
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
+    }
+    // Provider accepts only json_object: downgrade json_schema instead of letting it 400.
+    if (rule.downgradeResponseFormat && body.response_format?.type === "json_schema") {
+      body.response_format = { type: "json_object" };
     }
     // Per-message field drop (assistant turns only — that is where clients replay reasoning).
     if (Array.isArray(rule.dropMessageFields) && Array.isArray(body.messages)) {
