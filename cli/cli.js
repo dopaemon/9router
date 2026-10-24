@@ -833,40 +833,17 @@ function startServer(updatePromise) {
         const { clearScreen } = require("./src/cli/utils/display");
         clearScreen();
 
-        if (process.platform === "darwin") {
-          // macOS: keep the current process alive — spawning a detached child puts
-          // it outside the login session so NSStatusItem silently fails.
-          process.removeAllListeners("SIGHUP");
-          process.on("SIGHUP", () => {});
-          process.removeAllListeners("SIGTERM");
-          process.on("SIGTERM", () => {});
-
-          // Release stdin from raw terminal mode so closing the terminal does not trigger EIO
-          if (process.stdin.isTTY) {
-            try { process.stdin.setRawMode(false); } catch (e) {}
-          }
-          try {
-            process.stdin.pause();
-            process.stdin.unref();
-          } catch (e) {}
-
-          // Suppress EPIPE/EIO if terminal pty is destroyed
-          if (process.stdout) process.stdout.on("error", () => {});
-          if (process.stderr) process.stderr.on("error", () => {});
-
-          console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-          console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
-          console.log(`   Server: http://${displayHost}:${port}`);
-          console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
-
-          // Tray already init'd at startup — just keep event loop alive.
-          return;
-        }
-
-        // Windows/Linux: spawn detached bgProcess (systray works fine in child)
         console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
-        const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {
+        // Spawn detached background process running in tray mode
+        const bgProcess = spawn(process.execPath, [
+          "--dns-result-order=ipv4first",
+          __filename,
+          "--tray",
+          "--skip-update",
+          "-p", port.toString(),
+          "-H", host
+        ], {
           detached: true,
           stdio: "ignore",
           windowsHide: true,
@@ -876,9 +853,9 @@ function startServer(updatePromise) {
 
         console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
         console.log(`   Server: http://${displayHost}:${port}`);
-        console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
+        console.log(`\n💡 Terminal released. You can close this terminal or continue using it.\n`);
 
-        // cleanup() kills server so bgProcess can claim the port fresh
+        // cleanup() kills current server/tray so bgProcess claims the port fresh
         cleanup();
         process.exit(0);
         } else if (choice === "exit") {
