@@ -80,12 +80,23 @@ function disableAutoStart() {
  * On macOS, both the plist file and the launchd registration must be present —
  * otherwise the tray menu would lie about the state (showing "✓ Enabled" even
  * when launchd has the agent in a failed state or hasn't loaded it).
+ */
 function isAutoStartEnabled() {
   const platform = process.platform;
+
   try {
     if (platform === "darwin") {
       const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", `${APP_LABEL}.plist`);
-      return fs.existsSync(plistPath);
+      if (!fs.existsSync(plistPath)) return false;
+      try {
+        execSync(`launchctl list ${APP_LABEL}`, {
+          stdio: ["ignore", "ignore", "ignore"],
+          timeout: 3000
+        });
+        return true;
+      } catch (e) {
+        return false;
+      }
     } else if (platform === "win32") {
       const startupPath = path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${APP_NAME}.vbs`);
       return fs.existsSync(startupPath);
@@ -179,18 +190,38 @@ function enableMacOS(cliPath) {
 
   fs.writeFileSync(plistPath, plistContent);
 
-  // Do NOT invoke `launchctl load -w` while 9router is already running:
-  // with RunAtLoad=true, launchctl would immediately spawn a duplicate 9router
-  // that runs killAllAppProcesses and kills the current instance.
-  // Writing the plist to ~/Library/LaunchAgents is sufficient for launchd to
-  // start 9router on user login.
+  // If we're the running agent already, launchctl unload/load would send
+  // ourselves SIGTERM. Skip it — the plist file is updated on disk and
+  // launchd will pick it up at next login. isAutoStartEnabled() will still
+  // return true because launchctl already has the agent loaded.
+  if (isAgentSelfMacOS()) {
+    return true;
+  }
+
+  // Register with launchd in the current session. Without this, the agent
+  // only takes effect on the next user login and the user has no signal that
+  // anything actually happened. `unload` first defends against re-enable
+  // replacing an existing plist.
+  try {
+    execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
+  } catch (e) {}
+  try {
+    execSync(`launchctl load -w "${plistPath}"`, { stdio: "ignore" });
+  } catch (e) {
+    // Even if load fails, the plist is on disk and will be picked up at next
+    // login; report success based on the file write.
+  }
   return true;
 }
 
 function disableMacOS() {
   const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", `${APP_LABEL}.plist`);
 
-  // `launchctl unload` defends against any previously loaded job
+  // Don't kill ourselves: when the current process is the running agent,
+  // `launchctl unload` would send SIGTERM and the user clicking
+  // "Disable Auto-start" from the tray menu would lose their tray icon
+  // instead of just flipping the menu label. Skip the unload — removing the
+  // plist file is enough to prevent the agent from starting on next login.
   if (!isAgentSelfMacOS()) {
     try {
       execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
@@ -198,10 +229,13 @@ function disableMacOS() {
   }
 
   if (fs.existsSync(plistPath)) {
-    try { fs.unlinkSync(plistPath); } catch (e) {}
+    fs.unlinkSync(plistPath);
   }
   return true;
 }
+
+// ============ Windows ============
+
 function enableWindows(cliPath) {
   const startupDir = path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
   const vbsPath = path.join(startupDir, `${APP_NAME}.vbs`);
