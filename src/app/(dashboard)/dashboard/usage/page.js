@@ -134,6 +134,10 @@ function UsageContent() {
 
   useEffect(() => {
     try {
+      const savedPeriod = localStorage.getItem("9router_usage_period");
+      if (savedPeriod && PERIODS.some((p) => p.value === savedPeriod)) {
+        setPeriod(savedPeriod);
+      }
       const savedMode = localStorage.getItem("9router_usage_live_mode");
       if (savedMode !== null) setLiveMode(savedMode === "true");
       const savedInterval = localStorage.getItem("9router_usage_live_interval");
@@ -145,6 +149,13 @@ function UsageContent() {
       }
     } catch {}
   }, []);
+
+  const handlePeriodChange = (val) => {
+    setPeriod(val);
+    try {
+      localStorage.setItem("9router_usage_period", val);
+    } catch {}
+  };
 
   const handleLiveModeToggle = (next) => {
     setLiveMode(next);
@@ -201,7 +212,7 @@ function UsageContent() {
             <SegmentedControl
               options={PERIODS}
               value={period}
-              onChange={setPeriod}
+              onChange={handlePeriodChange}
               size="sm"
               className="w-auto"
             />
@@ -211,7 +222,14 @@ function UsageContent() {
 
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>
-          <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector liveMode={liveMode} setLiveMode={handleLiveModeToggle} liveInterval={liveInterval} />
+          <UsageStats
+            period={period}
+            setPeriod={handlePeriodChange}
+            hidePeriodSelector
+            liveMode={liveMode}
+            setLiveMode={handleLiveModeToggle}
+            liveInterval={liveInterval}
+          />
         </Suspense>
       )}
       {activeTab === "logs" && <RequestLogger />}
