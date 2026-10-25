@@ -172,6 +172,7 @@ export class AntigravityExecutor extends BaseExecutor {
     const projectId = transformedBody?.project || credentials?.projectId || this._lastProjectId;
     if (projectId) {
       headers["X-Goog-User-Project"] = projectId;
+      headers["X-Goog-Request-Reason"] = "conversational";
     }
     const requestId = transformedBody?.requestId || this._lastRequestId;
     if (requestId) {

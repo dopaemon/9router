@@ -92,7 +92,11 @@ const MAX_ASSISTANT_SESSIONS = 5000;
 const MAX_CONTINUATION_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
-const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
+const SESSION_HEADER_KEYS = [
+  "x-session-id", "session-id", "session_id", "x-amp-thread-id",
+  "x-conversation-id", "conversation-id", "conversation_id",
+  "x-machine-session-id", "antigravity-conversation-id"
+];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
 const CLAUDE_CODE_SESSION_HEADER = "x-claude-code-session-id";
 
@@ -158,9 +162,16 @@ function extractClientSessionId(headers, body, scope = "") {
 }
 
 function requestMessages(body) {
-    if (Array.isArray(body?.messages)) return body.messages;
-    if (Array.isArray(body?.input)) return body.input;
-    return [];
+  if (Array.isArray(body?.messages)) return body.messages;
+  if (Array.isArray(body?.input)) return body.input;
+  const contents = body?.contents || body?.request?.contents;
+  if (Array.isArray(contents)) {
+    return contents.map((c) => ({
+      role: c.role === "model" ? "assistant" : (c.role || "user"),
+      content: Array.isArray(c.parts) ? c.parts.map((p) => p.text || "").join(" ") : (c.content || ""),
+    }));
+  }
+  return [];
 }
 
 // Accumulate assistant text from OpenAI/Responses-style input/messages (cap-limited)
