@@ -139,6 +139,7 @@ import p135 from "./minimax-code-global.js";
 import p136 from "./bedrock.js";
 import p137 from "./bedrock-xai.js";
 import p138 from "./nous.js";
+<<<<<<< HEAD
 import p147 from "./requesty.js";
 import p148 from "./pollinations.js";
 import p149 from "./deepseek-web.js";
@@ -149,6 +150,7 @@ import p153 from "./veoaifree-web.js";
 import p154 from "./uc-web.js";
 import p155 from "./freebuff.js";
 import p156 from "./runcrate.js";
+import p157 from "./atmorouter.js";
 export default [
   p0,
   p1,
@@ -298,4 +300,5 @@ export default [
   p154,
   p155,
   p156,
+  p157,
 ];
