@@ -162,13 +162,22 @@ export class AntigravityExecutor extends BaseExecutor {
 
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
   // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
-  buildHeaders(credentials, stream = true, sessionId = null) {
+  buildHeaders(credentials, stream = true, url = null, model = null, transformedBody = null) {
     const userAgent = this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"];
-    return {
+    const headers = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": userAgent,
     };
+    const projectId = transformedBody?.project || credentials?.projectId || this._lastProjectId;
+    if (projectId) {
+      headers["X-Goog-User-Project"] = projectId;
+    }
+    const requestId = transformedBody?.requestId || this._lastRequestId;
+    if (requestId) {
+      headers["X-Aicode-Request-Id"] = requestId;
+    }
+    return headers;
   }
 
   transformRequest(model, body, stream, credentials) {
@@ -356,13 +365,17 @@ export class AntigravityExecutor extends BaseExecutor {
       ideVersion: ANTIGRAVITY_IDE_VERSION,
     };
 
+    const requestId = buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" });
+    this._lastRequestId = requestId;
+    this._lastProjectId = projectId;
+
     return {
       ...body,
       metadata,
       project: projectId,
       model: body.model || model,
       userAgent: "antigravity",
-      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
+      requestId,
       request: transformedRequest
     };
   }
@@ -498,7 +511,13 @@ export class AntigravityExecutor extends BaseExecutor {
     const cap = response.status === HTTP_STATUS.RATE_LIMITED
       ? MAX_RETRY_AFTER_MS
       : ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS;
-    return Math.min(1000 * (2 ** attempt), cap); // exponential backoff
+    const baseDelay = Math.min(1000 * (2 ** attempt), cap); // exponential backoff
+    // In production runtime, apply 10-25% randomized jitter (matching language_server "Calculated jitter: %v")
+    if (process.env.NODE_ENV !== "test") {
+      const jitterFactor = 0.10 + Math.random() * 0.15;
+      return Math.min(cap, Math.round(baseDelay * (1 + jitterFactor)));
+    }
+    return baseDelay;
   }
 
   /**
