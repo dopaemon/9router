@@ -139,7 +139,6 @@ import p135 from "./minimax-code-global.js";
 import p136 from "./bedrock.js";
 import p137 from "./bedrock-xai.js";
 import p138 from "./nous.js";
-<<<<<<< HEAD
 import p147 from "./requesty.js";
 import p148 from "./pollinations.js";
 import p149 from "./deepseek-web.js";
