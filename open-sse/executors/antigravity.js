@@ -49,6 +49,7 @@ const ANTIGRAVITY_REQUEST_BLACKLIST = [
   "enable_thinking",
   "thinking_budget",
   "thinkingConfig",
+  "metadata",
 ];
 
 // Strip blacklisted fields from an object (used for both body.request and top-level body)
@@ -360,11 +361,7 @@ export class AntigravityExecutor extends BaseExecutor {
     // with quota available. `image_gen` and
     // `search` buckets are unaffected and keep their own requestType.
     delete body.requestType;
-
-    const metadata = body.metadata || {
-      ideName: "antigravity",
-      ideVersion: ANTIGRAVITY_IDE_VERSION,
-    };
+    delete body.metadata;
 
     const requestId = buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" });
     this._lastRequestId = requestId;
@@ -372,7 +369,6 @@ export class AntigravityExecutor extends BaseExecutor {
 
     return {
       ...body,
-      metadata,
       project: projectId,
       model: body.model || model,
       userAgent: "antigravity",

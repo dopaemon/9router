@@ -6,30 +6,16 @@ import { ANTIGRAVITY_IDE_VERSION } from "../../open-sse/providers/shared.js";
 describe("Antigravity Antiban protections", () => {
   const ag = new AntigravityExecutor();
 
-  it("injects official Antigravity IDE metadata in transformRequest", () => {
+  it("strips client metadata to avoid Google 400 INVALID_ARGUMENT", () => {
     const out = ag.transformRequest("gemini-3.8-flash-tiered", {
+      metadata: { ideName: "antigravity", ideVersion: "2.26.0", user_id: "test" },
       request: {
         contents: [{ role: "user", parts: [{ text: "Hello" }] }],
       },
     }, true, { projectId: "test-proj", connectionId: "conn-1" });
 
-    expect(out.metadata).toEqual({
-      ideName: "antigravity",
-      ideVersion: ANTIGRAVITY_IDE_VERSION,
-    });
+    expect(out.metadata).toBeUndefined();
     expect(out.userAgent).toBe("antigravity");
-  });
-
-  it("preserves explicit custom metadata if provided", () => {
-    const custom = { ideName: "antigravity", ideVersion: "2.24.0", customField: true };
-    const out = ag.transformRequest("gemini-3.8-flash-tiered", {
-      metadata: custom,
-      request: {
-        contents: [{ role: "user", parts: [{ text: "Hello" }] }],
-      },
-    }, true, { projectId: "test-proj", connectionId: "conn-1" });
-
-    expect(out.metadata).toBe(custom);
   });
 
   it("sanitizes competitor IDE branding in systemInstruction", () => {
