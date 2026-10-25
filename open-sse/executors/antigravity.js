@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
+import { ANTIGRAVITY_IDE_VERSION } from "../providers/shared.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -162,10 +163,11 @@ export class AntigravityExecutor extends BaseExecutor {
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
   // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
   buildHeaders(credentials, stream = true, sessionId = null) {
+    const userAgent = this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"];
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
-      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
+      "User-Agent": userAgent,
     };
   }
 
@@ -301,8 +303,8 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
+    // Rewrite competing-client branding in system prompts and conversation content
+    // so Antigravity doesn't flag the request with a 429 Quota Exhausted.
     if (requestWithoutTools.systemInstruction?.parts) {
       for (const part of requestWithoutTools.systemInstruction.parts) {
         if (typeof part.text !== "string") continue;
@@ -311,7 +313,16 @@ export class AntigravityExecutor extends BaseExecutor {
         }
       }
     }
-
+    if (contents && contents.length > 0) {
+      for (const turn of contents) {
+        for (const part of turn.parts || []) {
+          if (typeof part.text !== "string") continue;
+          for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
+            part.text = part.text.replaceAll(from, to);
+          }
+        }
+      }
+    }
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
@@ -340,8 +351,14 @@ export class AntigravityExecutor extends BaseExecutor {
     // `search` buckets are unaffected and keep their own requestType.
     delete body.requestType;
 
+    const metadata = body.metadata || {
+      ideName: "antigravity",
+      ideVersion: ANTIGRAVITY_IDE_VERSION,
+    };
+
     return {
       ...body,
+      metadata,
       project: projectId,
       model: body.model || model,
       userAgent: "antigravity",

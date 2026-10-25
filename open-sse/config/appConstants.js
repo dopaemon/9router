@@ -187,11 +187,14 @@ export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official C
 export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", to: "" },
   { from: /You are Hermes(?: Agent)?(?:,\s*(?:an intelligent AI assistant|an AI assistant|an AI agent))?(?:,?\s*(?:built|created)\s+by\s+Nous Research)?\./gi, to: "You are an AI assistant." },
-  // Claude Code prepends this line to its system prompt. The Claude-format translator strips it,
-  // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
-  // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
-  { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
+  { from: /You are Cursor(?:, an intelligent coding assistant created by Anysphere)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /You are (?:Roo Code|Roo|Cline)(?:, a (?:highly skilled )?software (?:engineer|developer))?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /You are Cascade(?:, a collaborative AI assistant)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /You are an expert software developer assisting (?:via|in) Aider\./gi, to: "You are an AI assistant." },
+  { from: /^x-anthropic-[^\n]*(?:\r?\n)*/gim, to: "" },
+  { from: /<anthropic_thinking_protocol>/gi, to: "<thinking_protocol>" },
+  { from: /<\/anthropic_thinking_protocol>/gi, to: "</thinking_protocol>" },
+  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
 ];
 
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";

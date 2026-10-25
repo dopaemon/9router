@@ -187,13 +187,16 @@ describe("OmniRoute 12 Compression Engines — In-Depth Audit", () => {
 
   describe("4. RTK", () => {
     it("filters git and command outputs while preserving status", () => {
-      const gitStatusOutput = [
-        "On branch main",
-        "Changes not staged for commit:",
-        ...Array.from({ length: 25 }, (_, i) => `\tmodified:   src/components/module_${i}/index.js`),
-        "Untracked files:",
-        ...Array.from({ length: 25 }, (_, i) => `\ttests/unit/temp_${i}.test.js`),
-      ].join("\n");
+    const gitStatusOutput = [
+      "On branch main",
+      "Changes not staged for commit:",
+      "  (use \"git add <file>...\" to update what will be committed)",
+      "  (use \"git restore <file>...\" to discard changes in working directory)",
+      ...Array.from({ length: 25 }, (_, i) => `\tmodified:   src/components/module_${i}/index.js`),
+      "Untracked files:",
+      "  (use \"git add <file>...\" to include in what will be committed)",
+      ...Array.from({ length: 25 }, (_, i) => `\ttests/unit/temp_${i}.test.js`),
+    ].join("\n");
       const body = {
         messages: [
           {

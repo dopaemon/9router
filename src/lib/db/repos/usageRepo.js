@@ -665,9 +665,8 @@ export async function getUsageStats(period = "all") {
         const keyInfo = apiKeyMap[apiKeyVal];
         const apiKeyMasked = maskApiKey(apiKeyVal);
         const keyName = keyInfo?.name || apiKeyMasked || r.apiKey.slice(0, 8) + "...";
-        // Key by the FULL api key (same as the daily rollup + lastUsed overlay)
-        // — masking here collided all keys sharing a prefix into one bucket.
-        const akKey = `${r.apiKey}|${r.model}|${r.provider || "unknown"}`;
+        // Key by masked key + model + provider
+        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }

@@ -5,6 +5,7 @@ vi.mock("open-sse/index.js", () => ({}));
 vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: vi.fn(), markAccountUnavailable: vi.fn(), clearAccountError: vi.fn(),
   extractApiKey: () => null, isValidApiKey: vi.fn(),
+  resolveClientApiKey: async () => ({ apiKey: null, valid: false }),
 }));
 vi.mock("@/sse/services/model.js", () => ({ getModelInfo: vi.fn(), getComboModels: vi.fn() }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: vi.fn() }));

@@ -233,7 +233,7 @@ describe("API route contract — /api/usage/models", () => {
     const res = await GET(new Request("http://localhost/api/usage/models?provider=anthropic"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.models).toEqual(["claude-3"]);
+    expect(body.models).toEqual(["claude-3", "m"]);
   });
 
   it("unknown provider → empty list, still 200", async () => {

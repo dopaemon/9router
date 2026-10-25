@@ -97,13 +97,11 @@ export function reorderByCapabilities(models, required) {
     return soft.every((c) => caps[c] === true) ? 0 : 1;
   };
 
-  // Stable sort by tier (Array.prototype.sort is stable in modern engines).
-  return models
-    .map((m, i) => ({ m, i, t: tierOf(m) }))
-    .sort((a, b) => a.t - b.t || a.i - b.i)
-    .map((x) => x.m);
+  // If all models share the same tier, keep original array reference (no reorder)
+  const indexed = models.map((m, i) => ({ m, i, t: tierOf(m) }));
+  if (indexed.every((x) => x.t === indexed[0].t)) return models;
+  return indexed.sort((a, b) => a.t - b.t || a.i - b.i).map((x) => x.m);
 }
-
 /**
  * Track rotation state per combo (for round-robin strategy)
  * @type {Map<string, { index: number, consecutiveUseCount: number }>}
@@ -236,8 +234,14 @@ export function detectRequiredCapabilities(body) {
   const contents = body.contents || body.request?.contents;                      // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
 
-  // search: temporarily disabled in auto-switch (feature not wired yet).
-
+  // Detect web_search tool capability requirement
+  if (Array.isArray(body.tools)) {
+    for (const t of body.tools) {
+      if (t?.type === "web_search" || t?.type === "search" || t?.function?.name === "web_search") {
+        required.add("search");
+      }
+    }
+  }
   return required;
 }
 

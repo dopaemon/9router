@@ -160,7 +160,7 @@ describe("OpenCode free reasoning aliases reach OpenAI-shaped clients", () => {
     const first = out[0].choices[0].delta;
     expect(first.reasoning_content).toBe("17*23 = 391");
     expect(first.reasoning).toBe("17*23 = 391");
-    expect(out.map((e) => e.choices[0].delta.content || "").join("")).toBe("391");
+    expect(out.map((e) => e.choices?.[0]?.delta?.content || "").join("")).toBe("391");
     // Usage/thinking accounting reads reasoning_content, so the dashboard would
     // have recorded no thinking for this lane before the lift.
     expect(settled).toEqual({ content: "391", thinking: "17*23 = 391" });

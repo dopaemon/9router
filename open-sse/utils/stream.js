@@ -396,22 +396,10 @@ export function createSSEStream(options = {}) {
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
-              const isFinishChunk = parsed.choices?.[0]?.finish_reason;
-              if (isFinishChunk && !hasValidUsage(parsed.usage)) {
-                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-                parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
-                usage = estimated;
-                injectedUsage = true;
-              } else if (isFinishChunk && usage) {
-                const buffered = addBufferToUsage(usage);
-                parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
-                injectedUsage = true;
-              } else if (idFixed || fieldsInjected || toolCallIdFixed || toolNameRestored) {
-                output = `data: ${JSON.stringify(parsed)}\n`;
-                injectedUsage = true;
-              }
+        if (idFixed || fieldsInjected || toolCallIdFixed || toolNameRestored) {
+          output = `data: ${JSON.stringify(parsed)}\n`;
+          injectedUsage = true;
+        }
             } catch {
               // Skip non-JSON data lines silently — don't forward garbage to clients.
               // Upstream providers sometimes return plain-text errors (HTML, rate-limit

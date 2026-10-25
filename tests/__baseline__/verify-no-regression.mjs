@@ -15,7 +15,7 @@ const r = JSON.parse(readFileSync(resultsPath, "utf8"));
 const nowFails = r.testResults.flatMap(f => {
   const rel = f.name.includes("/app/") ? f.name.split("/app/")[1] : f.name.replace(/^.*?(tests\/)/, "$1");
   return f.assertionResults.filter(a => a.status === "failed")
-    .map(a => rel + ":: " + a.fullName);
+    .map(a => rel + " :: " + a.fullName);
 });
 
 // Regression = fail bây giờ NHƯNG không có trong baseline known-fails

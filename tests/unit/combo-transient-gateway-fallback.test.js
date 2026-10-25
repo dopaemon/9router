@@ -30,6 +30,7 @@ describe("checkFallbackError — request-scoped errors still abort", () => {
     expect(checkFallbackError(status, "malformed request")).toEqual({
       shouldFallback: false,
       cooldownMs: 0,
+      requestScoped: true,
     });
   });
 
@@ -41,7 +42,7 @@ describe("checkFallbackError — request-scoped errors still abort", () => {
       },
     }));
 
-    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true });
   });
 
   it("still honours rate-limit / quota wording on any 4xx", () => {
