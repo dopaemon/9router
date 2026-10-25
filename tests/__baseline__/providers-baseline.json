@@ -1295,5 +1295,16 @@
     "baseUrl": "https://freebuff.com/api/v1/paid/chat/completions",
     "validateUrl": "https://freebuff.com/api/v1/paid/models",
     "format": "openai"
+  },
+  "runcrate": {
+    "baseUrl": "https://api.runcrate.ai/v1/chat/completions",
+    "validateUrl": "https://www.runcrate.ai/api/v1/billing/balance",
+    "format": "openai"
+  },
+  "atmorouter": {
+    "baseUrl": "https://atmorouter.dev/v1/chat/completions",
+    "validateUrl": "https://atmorouter.dev/v1/models",
+    "thinkingFormat": "openai",
+    "format": "openai"
   }
 }
