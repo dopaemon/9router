@@ -170,11 +170,6 @@ export class AntigravityExecutor extends BaseExecutor {
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": userAgent,
     };
-    const projectId = transformedBody?.project || credentials?.projectId || this._lastProjectId;
-    if (projectId) {
-      headers["X-Goog-User-Project"] = projectId;
-      headers["X-Goog-Request-Reason"] = "conversational";
-    }
     const requestId = transformedBody?.requestId || this._lastRequestId;
     if (requestId) {
       headers["X-Aicode-Request-Id"] = requestId;

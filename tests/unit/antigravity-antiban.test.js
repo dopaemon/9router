@@ -66,15 +66,14 @@ describe("Antigravity Antiban protections", () => {
     expect(userText).toContain("Antigravity");
   });
 
-  it("attaches X-Goog-User-Project and X-Aicode-Request-Id matching language_server", () => {
+  it("attaches X-Aicode-Request-Id and avoids X-Goog-User-Project header", () => {
     const creds = { accessToken: "tok-123", projectId: "test-gcp-project" };
     const transformed = ag.transformRequest("gemini-3.8-flash-tiered", {
       request: { contents: [{ role: "user", parts: [{ text: "hi" }] }] },
     }, true, creds);
 
     const headers = ag.buildHeaders(creds, true, null, "gemini-3.8-flash-tiered", transformed);
-    expect(headers["X-Goog-User-Project"]).toBe("test-gcp-project");
-    expect(headers["X-Goog-Request-Reason"]).toBe("conversational");
+    expect(headers["X-Goog-User-Project"]).toBeUndefined();
     expect(headers["X-Aicode-Request-Id"]).toBe(transformed.requestId);
     expect(headers["User-Agent"]).toBe("antigravity/hub/2.26.0 darwin/arm64");
   });
