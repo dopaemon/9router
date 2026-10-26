@@ -211,6 +211,10 @@ describe("inspectSSELine — Anthropic Messages client format", () => {
   it("an in-band error IS content: forward it, do not fail over silently (#5187)", () => {
     expect(inspectSSELine(ev({ type: "error", error: { type: "api_error", message: "x" } })).content).toBe(true);
   });
+  it("synthesized EMPTY_STREAM_ERROR is NOT content: combo must fail over", async () => {
+    const { EMPTY_STREAM_ERROR } = await import("../../open-sse/config/errorConfig.js");
+    expect(inspectSSELine(ev({ type: "error", error: { type: "api_error", message: EMPTY_STREAM_ERROR.message } })).content).toBe(false);
+  });
   it("message_delta stop_reason maps to the hub vocabulary; refusal → content_filter (no-retry)", () => {
     expect(inspectSSELine(ev({ type: "message_delta", delta: { stop_reason: "end_turn" } })).finishReason).toBe("stop");
     const refusal = inspectSSELine(ev({ type: "message_delta", delta: { stop_reason: "refusal" } })).finishReason;

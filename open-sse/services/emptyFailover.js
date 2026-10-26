@@ -22,6 +22,7 @@ import { toOpenAIFinish } from "../translator/concerns/finishReason.js";
 import { FORMATS } from "../translator/formats.js";
 import { EMPTY_PEEK_DEADLINE_MS } from "../config/runtimeConfig.js";
 import { parseSSELine } from "../utils/streamHelpers.js";
+import { EMPTY_STREAM_ERROR } from "../config/errorConfig.js";
 
 // OpenAI chat content test. A chunk counts as content only if it carries
 // assistant output the caller can consume:
@@ -56,6 +57,9 @@ const nonEmptyString = (s) => typeof s === "string" && s.length > 0;
 function inspectClaudeEvent(obj) {
   let content = false, finishReason = null;
   if (obj.type === "error") {
+    if (obj.error?.message === EMPTY_STREAM_ERROR.message) {
+      return { content: false, finishReason: null };
+    }
     // An in-band error is a decision, not an empty stream: commit it so the
     // client sees the upstream error instead of silently failing over to the
     // next member (part of #5187).
