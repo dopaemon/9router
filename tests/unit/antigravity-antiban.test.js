@@ -97,4 +97,62 @@ describe("Antigravity Antiban protections", () => {
       expect(text).not.toContain("developed by OpenAI");
     }
   });
+  it("sanitizes Windsurf, Continue, Amazon Q, Devin, and Supermaven prompts", () => {
+    const prompts = [
+      "You are Windsurf, an agentic AI powered by Codeium.",
+      "You are Continue, an open-source AI code assistant.",
+      "You are Amazon Q, an AI coding companion.",
+      "You are Supermaven, the fastest AI code completion tool.",
+      "You are Devin, an autonomous AI software engineer.",
+    ];
+    for (const prompt of prompts) {
+      const out = ag.transformRequest("gemini-3.8-flash-tiered", {
+        request: {
+          systemInstruction: { parts: [{ text: prompt }] },
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        },
+      }, true, {});
+      const text = out.request.systemInstruction.parts[0].text;
+      expect(text).not.toContain("Windsurf");
+      expect(text).not.toContain("Codeium");
+      expect(text).not.toContain("Continue");
+      expect(text).not.toContain("Amazon Q");
+      expect(text).not.toContain("Supermaven");
+      expect(text).not.toContain("Devin");
+    }
+  });
+
+  it("parseError extracts ErrorInfo reasons like ADMIN_SUSPENDED, INELIGIBLE_ACCOUNT, and USER_PROJECT_DENIED", () => {
+    const errorPayload = JSON.stringify({
+      error: {
+        code: 403,
+        message: "Account suspended",
+        status: "PERMISSION_DENIED",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            reason: "ADMIN_SUSPENDED",
+            domain: "googleapis.com",
+          },
+        ],
+      },
+    });
+
+    const parsed = ag.parseError({ status: 403 }, errorPayload);
+    expect(parsed.status).toBe(403);
+    expect(parsed.message).toContain("ADMIN_SUSPENDED");
+  });
+
+  it("checkFallbackError treats ADMIN_SUSPENDED with max cooldown and PROHIBITED_USE_POLICY as request-scoped", async () => {
+    const { checkFallbackError } = await import("../../open-sse/services/accountFallback.js");
+    const { MAX_RATE_LIMIT_COOLDOWN_MS } = await import("../../open-sse/config/errorConfig.js");
+
+    const adminSuspended = checkFallbackError(403, "[ADMIN_SUSPENDED] User is suspended", 0, "antigravity");
+    expect(adminSuspended.shouldFallback).toBe(true);
+    expect(adminSuspended.cooldownMs).toBe(MAX_RATE_LIMIT_COOLDOWN_MS);
+
+    const pup = checkFallbackError(400, "GRANULAR_FINISH_REASON_PROHIBITED_USE_POLICY_LIMITED_DISABLED", 0, "antigravity");
+    expect(pup.shouldFallback).toBe(false);
+    expect(pup.requestScoped).toBe(true);
+  });
 });

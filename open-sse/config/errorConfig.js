@@ -72,6 +72,18 @@ export const ERROR_RULES = [
   // Intl gateway blocks affect the account/IP, so let the connection back off.
   { provider: "codebuddy-intl", text: "request illegal", backoff: true },
   { provider: "codebuddy-intl", text: "conversation id missing", backoff: true },
+  // Antigravity / Google Cloud Code account ban and policy status rules
+  { provider: "antigravity", text: "tos_violation", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "antigravity", text: "violation of terms of service", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "antigravity", text: "admin_suspended", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "antigravity", text: "parent_suspended", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "antigravity", text: "ineligible_account", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "antigravity", text: "restricted_dasher_user", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "antigravity", text: "restricted_network", cooldownMs: COOLDOWN.long },
+  { provider: "antigravity", text: "user_project_denied", cooldownMs: COOLDOWN.long },
+  { provider: "antigravity", text: "unsupported_client", cooldownMs: COOLDOWN.long },
+  { provider: "antigravity", text: "credentials_expired", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "antigravity", text: "prohibited_use_policy", requestScoped: true },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },

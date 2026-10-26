@@ -117,20 +117,25 @@ export class AntigravityExecutor extends BaseExecutor {
     super("antigravity", PROVIDERS.antigravity);
   }
 
-  // Parse Antigravity quota error to extract precise resetsAtMs from ErrorInfo/RetryInfo
+  // Parse Antigravity quota & ban errors to extract precise resetsAtMs and ErrorInfo reasons
   parseError(response, bodyText) {
-    if ((response.status === 429 || response.status === 409) && bodyText) {
+    if (bodyText) {
       try {
         const json = JSON.parse(bodyText);
         const err = json?.error;
         let resetsAtMs = null;
+        let reason = null;
         const details = Array.isArray(err?.details) ? err.details : [];
         for (const d of details) {
+          if (d?.reason && typeof d.reason === "string") {
+            reason = d.reason;
+          } else if (d?.statusReason && typeof d.statusReason === "string") {
+            reason = d.statusReason;
+          }
           if (d?.metadata?.quotaResetTimeStamp) {
             const ms = new Date(d.metadata.quotaResetTimeStamp).getTime();
             if (!isNaN(ms) && ms > Date.now()) {
               resetsAtMs = ms;
-              break;
             }
           }
           if (typeof d?.retryDelay === "string") {
@@ -139,13 +144,16 @@ export class AntigravityExecutor extends BaseExecutor {
               const ms = Date.now() + Math.round(sec * 1000);
               if (ms > Date.now()) {
                 resetsAtMs = ms;
-                break;
               }
             }
           }
         }
-        if (resetsAtMs) {
-          return { status: response.status, message: err?.message || bodyText, resetsAtMs };
+        if (resetsAtMs || reason) {
+          const rawMsg = err?.message || bodyText;
+          const message = reason && !rawMsg.includes(reason)
+            ? `[${reason}] ${rawMsg}`
+            : rawMsg;
+          return { status: response.status, message, ...(resetsAtMs && { resetsAtMs }) };
         }
       } catch { /* fall through to default */ }
     }

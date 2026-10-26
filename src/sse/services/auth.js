@@ -287,7 +287,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
+  const isAccountWideBan = /tos_violation|terms of service|admin_suspended|parent_suspended|ineligible_account|restricted_dasher_user/i.test(errorText || "");
+  const lockModel = (githubResetAtMs || isAccountWideBan) ? null : model;
+  const lockUpdate = buildModelLockUpdate(lockModel, cooldownMs);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,

@@ -194,10 +194,17 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: /You are GitHub Copilot(?:, an AI pair programmer)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
   { from: /You are ChatGPT(?:, a large language model trained by OpenAI)?\./gi, to: "You are an AI assistant." },
   { from: /You are (?:an AI|a code) assistant developed by OpenAI\./gi, to: "You are an AI assistant." },
+  { from: /You are Windsurf(?:, an agentic AI powered by Codeium)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /You are Continue(?:, an open-source AI code assistant)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /You are Amazon Q(?: Developer)?(?:, an AI coding companion)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /You are Supermaven(?:, the fastest AI code completion tool)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /You are Devin(?:, an autonomous AI software engineer)?\./gi, to: "You are Antigravity, an advanced AI coding assistant." },
+  { from: /\bAnysphere\b/g, to: "Google" },
+  { from: /\bCodeium\b/g, to: "Google" },
   { from: /^x-anthropic-[^\n]*(?:\r?\n)*/gim, to: "" },
   { from: /<anthropic_thinking_protocol>/gi, to: "<thinking_protocol>" },
   { from: /<\/anthropic_thinking_protocol>/gi, to: "</thinking_protocol>" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
+  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m.toLowerCase() === "opencode" ? "antigravity" : "ANTIGRAVITY") },
 ];
 
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
