@@ -1564,7 +1564,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > requesty → headers
   },
 }
 `;
-
 exports[`GOLDEN buildHeaders (default executor providers) > runcrate → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2349,7 +2348,6 @@ exports[`GOLDEN buildUrl (default executor providers) > requesty → url (stream
   "stream": "https://router.requesty.ai/v1/chat/completions",
 }
 `;
-
 exports[`GOLDEN buildUrl (default executor providers) > runcrate → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.runcrate.ai/v1/chat/completions",

@@ -18,6 +18,21 @@ export default {
   models: [
     { id: "clef", name: "Clef", kind: "systemone" },
     { id: "clef-flash", name: "Clef Flash", kind: "systemone" },
+    { id: "phonon:latest",           name: "Phonon (Latest)",         kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon",                  name: "Phonon",                  kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:multilingual",     name: "Phonon Multilingual",     kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:40m-multilingual", name: "Phonon 40M Multilingual", kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:en",               name: "Phonon English",          kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:31m-en",           name: "Phonon 31M English",      kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:40m-en",           name: "Phonon 40M English",      kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:de",               name: "Phonon German",           kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:40m-de",           name: "Phonon 40M German",       kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:es",               name: "Phonon Spanish",          kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:40m-es",           name: "Phonon 40M Spanish",      kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:fr",               name: "Phonon French",           kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:40m-fr",           name: "Phonon 40M French",       kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:pt",               name: "Phonon Portuguese",       kind: "tts", params: ["voice", "response_format"] },
+    { id: "phonon:40m-pt",           name: "Phonon 40M Portuguese",   kind: "tts", params: ["voice", "response_format"] },
 
     // Ollama Embedding Models (https://ollama.com/search?c=embedding)
     // nomic-embed-text
@@ -145,11 +160,18 @@ export default {
     { id: "laya:322m-multilingual-bf16",          name: "Laya 322M Multilingual (BF16)",         kind: "embedding", dimensions: 1024 },
     { id: "laya:421m-typed-decisions-bf16",       name: "Laya 421M Decisions (BF16)",            kind: "embedding", dimensions: 1024 },
   ],
-  serviceKinds: ["llm", "systemone", "embedding"],
+  serviceKinds: ["llm", "systemone", "tts", "embedding"],
   systemoneConfig: {
     baseUrl: "http://localhost:11434/v1/systemone",
     // Saved host (providerSpecificData.baseUrl) is joined with this path.
     path: "/v1/systemone",
+  },
+  ttsConfig: {
+    baseUrl: "http://localhost:11434/v1/audio/speech",
+    path: "/v1/audio/speech",
+    defaultModel: "phonon",
+    authType: "apikey",
+    format: "openai",
   },
   embeddingConfig: {
     baseUrl: "http://localhost:11434/v1/embeddings",
