@@ -39,12 +39,21 @@ function envMs(name, def) {
   return Number.isFinite(n) && n > 0 ? n : def;
 }
 
-// Parse a boolean env flag ("true"/"1" → true, "false"/"0" → false), falling back to a default.
+// Parse a boolean env flag ("true"/"1" → true, "false"/"0" → false), falling back to default.
 function envBool(name, def) {
   const raw = process.env[name]?.trim().toLowerCase();
   if (raw === "true" || raw === "1") return true;
   if (raw === "false" || raw === "0") return false;
   return def;
+}
+
+// Variant that accepts 0 (used to disable a deadline, e.g. EMPTY_PEEK_DEADLINE_MS=0).
+function envMsAllowZero(name, def) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return def;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return def;
+  return n;
 }
 
 function envUrl(name, def) {
@@ -71,8 +80,8 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 export const ALLOW_INSECURE_TLS_FALLBACK = envBool("ALLOW_INSECURE_TLS_FALLBACK", false) && !envBool("STRICT_SSL", false);
 // Combo empty-content failover: how long a 2xx stream may be held while waiting for its first
 // content-bearing frame before committing to that model (fail-open on expiry).
-// Env: EMPTY_PEEK_DEADLINE_MS.
-export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000);
+// Env: EMPTY_PEEK_DEADLINE_MS. Set to 0 to disable the peek (commit on the first upstream byte).
+export const EMPTY_PEEK_DEADLINE_MS = envMsAllowZero("EMPTY_PEEK_DEADLINE_MS", 45 * 1000);
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
