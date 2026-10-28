@@ -150,6 +150,7 @@ import p154 from "./uc-web.js";
 import p155 from "./freebuff.js";
 import p156 from "./runcrate.js";
 import p157 from "./atmorouter.js";
+import p158 from "./nace.js";
 export default [
   p0,
   p1,
@@ -300,4 +301,5 @@ export default [
   p155,
   p156,
   p157,
+  p158,
 ];
